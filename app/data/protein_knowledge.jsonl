@@ -1,0 +1,18 @@
+{"text": "蛋白激酶（Protein Kinase）是一类能够将磷酸基团从 ATP 转移到蛋白质底物上的酶，在细胞信号转导、增殖与凋亡调控中发挥核心作用。激酶抑制剂是目前抗癌药物研发的热门靶点之一。", "source": "protein-family/kinase", "category": "protein_family"}
+{"text": "G 蛋白偶联受体（GPCR）是人体中最大的膜蛋白超家族，包含约 800 个成员。GPCR 是超过 30% 的上市药物靶点，涉及视觉、嗅觉、免疫和神经系统调节等生理过程。", "source": "protein-family/gpcr", "category": "protein_family"}
+{"text": "抗体的可变区（Fv）由重链可变区 VH 和轻链可变区 VL 组成，其互补决定区（CDR）直接决定抗原结合特异性。CDR-H3 通常是多样性最高、对亲和力贡献最大的区域。", "source": "protein-family/antibody", "category": "protein_family"}
+{"text": "蛋白质的疏水性核心（Hydrophobic Core）对维持三维折叠至关重要。疏水残基如 Leu、Ile、Val、Phe 倾向于埋藏在蛋白质内部，驱动折叠过程中的疏水坍塌。", "source": "structural-biology/folding", "category": "structural"}
+{"text": "蛋白质-蛋白质相互作用（PPI）界面通常覆盖 1500-3000 Å² 的埋藏溶剂可及表面积（BSA）。热点残基（Hot-spot Residues）对结合自由能贡献不成比例，常见的热点残基包括 Trp、Tyr 和 Arg。", "source": "structural-biology/ppi", "category": "structural"}
+{"text": "蛋白质的等电点（pI）是其净电荷为零时的 pH 值。碱性残基（Lys、Arg、His）和酸性残基（Asp、Glu）的比例决定了蛋白质的 pI，进而影响其在不同 pH 条件下的溶解性和结合行为。", "source": "biochemistry/charge", "category": "biochemistry"}
+{"text": "多肽药物设计的关键原则包括：（1）控制分子量在 500-5000 Da 之间以平衡活性与可给药性；（2）引入非天然氨基酸或环化结构以提高蛋白酶抗性；（3）优化亲水-疏水平衡以改善膜渗透性。", "source": "drug-design/peptide-principles", "category": "peptide"}
+{"text": "穿膜肽（Cell-Penetrating Peptides, CPPs）通常富含精氨酸（Arg）和赖氨酸（Lys）等正电荷残基。经典的 TAT 穿膜肽序列为 YGRKKRRQRRR，其正电荷密度使其能够通过静电相互作用穿过细胞膜。", "source": "drug-design/cpp", "category": "peptide"}
+{"text": "多肽与靶蛋白的结合亲和力通常以解离常数 Kd 衡量。纳摩尔（nM）级别的 Kd 表示较强的结合，而微摩尔（μM）级别则表示中等结合。表面等离子共振（SPR）和等温滴定量热法（ITC）是常用的亲和力测量手段。", "source": "drug-design/affinity", "category": "peptide"}
+{"text": "抗菌肽（Antimicrobial Peptides, AMPs）是天然免疫系统的重要组成部分，通常具有两亲性结构、净正电荷和 12-50 个氨基酸。它们通过破坏细菌细胞膜发挥杀菌作用，被认为是对抗耐药菌的有前景候选物。", "source": "drug-design/amp", "category": "peptide"}
+{"text": "核酸适配体（Aptamer）是通过 SELEX（指数富集配基系统进化）技术从随机核酸文库中筛选出的短单链 DNA 或 RNA 分子，能以高亲和力和高特异性结合靶标蛋白。典型的适配体长度为 20-80 个核苷酸。", "source": "aptamer/selex", "category": "aptamer"}
+{"text": "适配体的二级结构（如发卡、G-四联体、内环和假结）对其靶标结合能力至关重要。G-四联体结构由富含鸟嘌呤的序列形成，具有出色的热稳定性和靶标识别能力。", "source": "aptamer/secondary-structure", "category": "aptamer"}
+{"text": "适配体相比抗体具有多项优势：化学合成成本低、批次间一致性好、热稳定性强、免疫原性低、分子量小（约 6-30 kDa）。但适配体在体内易被核酸酶降解，需要化学修饰（如 2'-氟、2'-氧甲基）来提高稳定性。", "source": "aptamer/advantages", "category": "aptamer"}
+{"text": "蛋白质结合位点预测常用方法包括几何方法（如 fpocket）、能量方法（如分子对接）和基于深度学习的方法（如 P2Rank、DeepSite）。准确的结合位点预测是药物设计的第一步。", "source": "prediction/binding-site", "category": "prediction"}
+{"text": "AlphaFold2 的预测置信度指标 pLDDT（predicted Local Distance Difference Test）范围为 0-100。pLDDT > 90 表示高置信度预测，70-90 为中等置信度，< 70 则建议谨慎使用该区域的结构预测。", "source": "prediction/alphafold", "category": "prediction"}
+{"text": "蛋白质语言模型（Protein Language Models）如 ESM-2 和 SaProt 利用通过自监督学习捕获的进化信息进行蛋白质表征。这些模型能够在下游任务（如结构预测、功能注释、突变效应预测）中达到最优或接近最优的性能。", "source": "prediction/plm", "category": "prediction"}
+{"text": "蛋白质序列中的保守性分析可以揭示功能重要残基。高度保守的残基往往位于活性位点、结合口袋或结构关键位置。多序列比对（MSA）和位置特异性打分矩阵（PSSM）是常用的保守性分析工具。", "source": "bioinformatics/conservation", "category": "bioinformatics"}
+{"text": "蛋白质的内在无序区域（Intrinsically Disordered Regions, IDRs）缺乏稳定的三维结构，但在信号转导、转录调控和相分离中扮演重要角色。IDRs 通常富含带电残基和极性残基，且序列复杂度较低。", "source": "structural-biology/idr", "category": "structural"}
