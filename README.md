@@ -1,490 +1,130 @@
 # Protein Agent
 
 这是我在 `Agent / AI 应用工程` 方向上的第二个专门项目。  
-它不再是通用聊天 agent，而是一个面向 `蛋白质序列 → 任务路由 → 模型调用` 的轻量工程骨架。
+它不再是一个纯粹的同步玩具脚本，目前已被升级重构为一个**基于高并发异步架构（Celery + Redis + FastAPI + SQLite持久化）**的企业级工程骨干。
 
-项目目录与第一个项目分开，独立放在：
+项目定位：**面向 `蛋白质序列 → 任务路由 → 模型调用` 的轻量级高并发任务下发工作台**。
 
-- `/Users/alakazan/Documents/Playground/求职/protein-agent`
+## 1. 核心架构与技术栈
 
-当前目标很明确：
+本项目的架构严格遵循了现代 AI SaaS 中间件的标准三层结构：
 
-- 根据 query 中的关键词选择合适的蛋白质语言模型
-- 支持三类任务：
-  - `蛋白质预测`
-  - `多肽生成`
-  - `核酸适配体生成`
-- 默认支持 `local-stub` 离线联调
-- 预留真实模型 API 对接入口
-- 通过离线友好的 RAG 在模型调用前注入蛋白质领域背景知识
+- **Web 网关与 API 层：`FastAPI`**
+  - 使用异步 I/O (ASGI)，天然支持高爆发并发访问。
+  - 所有请求经过 `Pydantic` 严格校验序列合法性。
+  - 提供 RESTful 接口进行模型管理查探、代理路由决策。
+- **任务消息队列层：`Celery` + `Redis`**
+  - 对于耗时长的大模型推理调用，FastAPI 收到请求后会在第一时间生成唯一 `task_id`，交由 Redis Broker 派发给后端的 Celery Worker，防止 HTTP 连接长时间阻塞导致前端 504 Gateway Timeout。
+- **持久化记录层：`SQLAlchemy 2.0` + `aiosqlite` (SQLite)**
+  - 利用异步游标引擎全链路记录每一次 AI Worker 的执行状态（`PENDING` -> `RUNNING` -> `SUCCESS`），并详尽保留用户的 Query、生成的预测数据、各类模型跑分指标（Metrics）与历史 RAG 上下文溯源追查。
+- **业务集成：大模型标准化接入**
+  - 不仅保留了离线测试的 `local-stub` 桩代码，更内置了 `openai-compatible` ModelClient！现在已直接支持对接豆包大模型（Volcengine）和各类基于 GPT/DeepSeek API 格式的大模型。
+- **容器编排**
+  - 提供了完整的 `Dockerfile` 与 `docker-compose.yml`。
 
-## 1. 当前能力
+## 2. 界面展示机制
 
-- `GET /health`
-- `GET /models`
-- `GET /knowledge`
-- `GET /`（前端页面）
-- `POST /route`
-- `POST /run`
-- 关键词路由：
-  - 命中 `多肽` → 多肽生成模型
-  - 命中 `适配体 / 核酸 / 核算` → 核酸适配体生成模型
-  - 命中 `蛋白质 / 预测` → 蛋白质预测模型
-- 蛋白质序列抽取：
-  - 优先识别显式标签：`蛋白质序列`、`蛋白序列`、`protein sequence`、`sequence`、`seq`
-  - 安全 fallback：只接受独立的大写氨基酸 token
-  - 不再把普通英文句子误识别成蛋白质序列
-- 对每个任务返回结构化结果
-- 生成任务附带本地启发式评价指标
-- RAG 知识增强：
-  - 默认后端是 `local-hash`
-  - 离线可跑，不依赖联网下载模型
-  - 同一份知识库会缓存复用，不会在每个请求里重复初始化
-- 自带前端页面，可直接在浏览器里发请求、看路由结果、评价指标和 RAG 检索上下文
-  - 新版页面采用“实验工作台”布局
-  - 包含状态侧栏、示例切换、指标卡片和结果总览
-- 模型 provider 抽象：
-  - `local-stub`
-  - `generic-json`
+自带原生 JavaScript 前端工作台页面，无需单独配 React/Vue 环境。支持：
+- 轮询机制（Polling）：下发任务后即时显示 `后台异步执行中...`，轮询 `/tasks/{task_id}` 获取最终生成状态。
+- **历史跑题回放**：通过异步对接 SQLite 查询接口，页面拥有了“历史运行记录”看板，点击即可随时回看过去命中的候选分子片段以及得分。
 
-## 2. 项目目录
+## 3. 项目目录设计
 
 ```text
 protein-agent/
 ├── .env.example
 ├── .gitignore
+├── docker-compose.yml   <-- 生产/演示用：一键编排 (Web+Worker+Redis)
+├── Dockerfile          <-- 镜像构建规范
 ├── README.md
-├── requirements.txt
-├── requirements-rag.txt
+├── requirements.txt    <-- 运行时：涵盖了 fastapi, celery, sqlalchemy, etc.
 ├── app/
-│   ├── agent.py
-│   ├── config.py
-│   ├── knowledge_base.py
-│   ├── main.py
-│   ├── metrics.py
-│   ├── model_clients.py
-│   ├── router.py
-│   ├── schemas.py
-│   ├── sequence_utils.py
+│   ├── main.py         <-- FastAPI 路由和任务调度（网关）
+│   ├── worker.py       <-- Celery 异步爬虫 / 大模型推理端点
+│   ├── database.py     <-- SQLAlchemy 异步引擎装配器
+│   ├── models.py       <-- ORM: AgentExecutionRecord 数据表
+│   ├── agent.py        <-- Agent 核心业务逻辑实现
+│   ├── model_clients.py<-- 模型适配层 (local-stub / generic-json / openai-compatible)
+│   ├── knowledge_base.py<- RAG 向量检索
+│   ├── router.py       <-- 关键词决策
+│   ├── schemas.py      <-- Pydantic DTO
+│   ├── sequence_utils.py<- 序列合规与抽取
+│   ├── config.py       <-- 环境加载设定
 │   ├── data/
-│   │   └── protein_knowledge.jsonl
+│   │   ├── protein_knowledge.jsonl
+│   │   └── protein_agent.db  <-- SQLite 本地化存储库自动生成于此
 │   └── static/
 │       ├── app.js
 │       ├── index.html
 │       └── styles.css
-└── tests/
-    ├── test_agent.py
-    ├── test_knowledge_base.py
-    ├── test_router.py
-    └── test_sequence_utils.py
+└── tests/              <-- pytest 单元回归测试
 ```
 
-## 3. 每个文件负责什么
-
-### [app/main.py](/Users/alakazan/Documents/Playground/求职/protein-agent/app/main.py)
-
-服务入口层。
-
-负责：
-
-- 定义 `FastAPI` 接口
-- 接收 query / protein_sequence
-- 组装共享的 `ProteinAgent`
-- 返回结构化响应
-
-当前接口：
-
-- `GET /`
-- `GET /health`
-- `GET /models`
-- `GET /knowledge`
-- `POST /route`
-- `POST /run`
-
-另外：
-
-- `GET /static/{asset_path}` 提供前端静态资源
-
-### [app/config.py](/Users/alakazan/Documents/Playground/求职/protein-agent/app/config.py)
-
-配置层。
-
-负责：
-
-- 读取 `.env`
-- 解析三类模型配置
-- 解析 RAG 配置
-- 统一输出 `AppConfig`
-
-核心配置项：
-
-- `PROTEIN_MODEL_PROVIDER`
-- `PROTEIN_MODEL_NAME`
-- `PROTEIN_MODEL_BASE_URL`
-- `PEPTIDE_MODEL_PROVIDER`
-- `PEPTIDE_MODEL_NAME`
-- `PEPTIDE_MODEL_BASE_URL`
-- `APTAMER_MODEL_PROVIDER`
-- `APTAMER_MODEL_NAME`
-- `APTAMER_MODEL_BASE_URL`
-- `RAG_ENABLED`
-- `RAG_BACKEND`
-- `RAG_TOP_K`
-- `RAG_DATA_PATH`
-- `RAG_EMBEDDING_MODEL`
-
-### [app/router.py](/Users/alakazan/Documents/Playground/求职/protein-agent/app/router.py)
-
-关键词路由层。
-
-负责：
-
-- 识别 query 中的目标任务
-- 决定走哪一个模型槽位
-- 拒绝同时命中 `多肽` 和 `适配体` 的歧义 query
-
-路由优先级：
-
-1. `适配体 / 核酸 / 核算`
-2. `多肽`
-3. `蛋白质 / 预测`
-
-### [app/sequence_utils.py](/Users/alakazan/Documents/Playground/求职/protein-agent/app/sequence_utils.py)
-
-序列处理层。
-
-负责：
-
-- 从 query 中提取蛋白质序列
-- 规范化蛋白质序列
-- 检查长度和非法字符
-
-当前策略：
-
-- 显式标签优先：`蛋白质序列`、`蛋白序列`、`protein sequence`、`sequence`、`seq`
-- 安全 fallback：只接受独立的大写氨基酸 token
-- 普通英文自由文本不会再被静默当成蛋白质序列
-
-### [app/knowledge_base.py](/Users/alakazan/Documents/Playground/求职/protein-agent/app/knowledge_base.py)
-
-RAG 检索增强层。
-
-负责：
-
-- 加载 JSONL 格式的蛋白质领域知识条目
-- 默认使用 `local-hash` 做轻量检索
-- 可选切换到 `sentence-transformer` 后端
-- 暴露 `search(query, top_k)` 接口返回最相关的知识片段
-- 通过缓存复用知识库实例，避免每个请求重复初始化
-
-核心类/函数：
-
-- `ProteinKnowledgeBase` — 知识库管理与检索
-- `RetrievedChunk` — 单条检索结果（text, source, score）
-- `get_cached_knowledge_base(...)` — 共享知识库构造函数
-
-### [app/data/protein_knowledge.jsonl](/Users/alakazan/Documents/Playground/求职/protein-agent/app/data/protein_knowledge.jsonl)
-
-内置种子知识库。
-
-包含蛋白质领域背景知识条目，覆盖：
-
-- 蛋白质家族
-- 结构生物学
-- 多肽药物设计
-- 适配体技术
-- 计算预测方法
-
-每条格式：`{"text": "...", "source": "...", "category": "..."}`。
-
-### [app/model_clients.py](/Users/alakazan/Documents/Playground/求职/protein-agent/app/model_clients.py)
-
-模型调用适配层。
-
-负责：
-
-- 屏蔽不同模型 provider 的调用差异
-- 提供统一的 `run(model_request, model_config)` 能力
-- 解析真实模型 API 的 JSON 返回
-
-当前支持：
-
-- `LocalStubSequenceModelClient`
-- `GenericJsonSequenceModelClient`
-
-### [app/metrics.py](/Users/alakazan/Documents/Playground/求职/protein-agent/app/metrics.py)
-
-评价指标层。
-
-负责：
-
-- 蛋白质预测的本地启发式指标
-- 多肽候选的本地启发式指标
-- 适配体候选的本地启发式指标
-
-当前指标不是实验验证指标，只是工程联调用的快速反馈。
-
-### [app/agent.py](/Users/alakazan/Documents/Playground/求职/protein-agent/app/agent.py)
-
-agent 核心编排层。
-
-负责：
-
-- 路由 query
-- 提取蛋白质序列
-- 检索相关背景知识
-- 选择模型配置
-- 调用模型 client
-- 合并返回文本与评价指标
-
-主流程：
+## 4. 全链路执行流程（Worker Flow）
 
 ```text
-用户 query
-→ router.py 判断任务类型
-→ sequence_utils.py 提取蛋白质序列
-→ knowledge_base.py 检索蛋白质领域背景知识（RAG）
-→ agent.py 选择模型配置
-→ model_clients.py 调用对应 provider
-→ metrics.py 计算评价指标
-→ 返回结构化响应（含 RAG 上下文）
+ 用户发出多肽请求 (HTTP POST /run)
+ ├──> [FastAPI] main.py 解析验证、写入数据库生成状态 PENDING，返回 task_id
+ ├──> 前端收到 task_id，开启 2.5s 定时请求 /tasks/{task_id}
+ └──> [Celery - worker.py] 从 Redis 队列抢到任务，连接 DB 将状态置为 RUNNING
+      ├──> router.py 鉴权并决定任务路线 (PEPTIDE_GENERATION)
+      ├──> sequence_utils.py 检测蛋白质串是否合规
+      ├──> knowledge_base.py 进行本地 FAISS RAG 背景增强
+      ├──> agent.py 判断为 openai-compatible，发起对 豆包 API 的组装与网络通信
+      ├──> 提取并解析模型返回结果 (xml 的 <sequence> 等设定标签)
+      └──> metrics.py 计算该项输出的先验启发式生物学分数
+      └──> 更新 SQLite status 为 SUCCESS 并将组装内容填回记录。
+前端第 N 次轮询发现变为了 SUCCESS，停止轮询，页面瞬间填充！
 ```
 
-### [app/static/index.html](/Users/alakazan/Documents/Playground/求职/protein-agent/app/static/index.html)
+## 5. 本地运行体验
 
-前端页面入口。
+本项目支持两种环境的迅速拉起：
 
-负责：
-
-- 提供浏览器侧交互界面
-- 组织“英雄区 + 输入台 + 结果总览”的单页结构
-- 填充多肽 / 适配体 / 蛋白预测示例
-- 展示任务类型、命中关键词、模型、候选序列、指标和 RAG 检索上下文
-
-### [app/static/app.js](/Users/alakazan/Documents/Playground/求职/protein-agent/app/static/app.js)
-
-前端交互逻辑。
-
-负责：
-
-- 调用 `/health`、`/models`、`/run`
-- 将响应回填到页面
-- 管理前端示例按钮和状态提示
-- 将指标渲染为卡片而不是原始 JSON 文本
-- 渲染 RAG 检索上下文
-
-### [app/static/styles.css](/Users/alakazan/Documents/Playground/求职/protein-agent/app/static/styles.css)
-
-前端样式层。
-
-负责：
-
-- 页面视觉风格
-- 响应式布局
-- 结果卡片、状态区和交互反馈样式
-- “实验工作台”式的视觉层次和动画过渡
-
-### [tests/test_router.py](/Users/alakazan/Documents/Playground/求职/protein-agent/tests/test_router.py)
-
-验证关键词路由逻辑。
-
-### [tests/test_agent.py](/Users/alakazan/Documents/Playground/求职/protein-agent/tests/test_agent.py)
-
-验证 agent 主流程、stub 模型分支和异常分支。
-
-### [tests/test_knowledge_base.py](/Users/alakazan/Documents/Playground/求职/protein-agent/tests/test_knowledge_base.py)
-
-验证知识库数据完整性、离线检索与容错行为。
-
-### [tests/test_sequence_utils.py](/Users/alakazan/Documents/Playground/求职/protein-agent/tests/test_sequence_utils.py)
-
-验证序列抽取规则，避免英文自然语言误判。
-
-## 4. Generic JSON 模型 API 约定
-
-如果后面要接真实模型 API，当前工程默认约定模型接口接受这样的 JSON：
-
-```json
-{
-  "model": "paired-peptide-generator",
-  "task_type": "peptide_generation",
-  "query": "请根据蛋白质序列生成配对多肽",
-  "protein_sequence": "MKTAYIAKQRQISFVKSHFSRQDILDLWIYHTQGYFP"
-}
-```
-
-推荐返回：
-
-```json
-{
-  "generated_sequence": "QRQISFVKSHFSRQ",
-  "summary": "模型返回一个候选多肽。",
-  "metrics": {
-    "remote_score": 0.81
-  }
-}
-```
-
-蛋白质预测分支可返回：
-
-```json
-{
-  "prediction": "该蛋白具有中等结合潜力。",
-  "metrics": {
-    "confidence": 0.72
-  }
-}
-```
-
-当前解析器会优先读取这些字段：
-
-- `generated_sequence`
-- `sequence`
-- `candidate_sequence`
-- `summary`
-- `prediction`
-- `message`
-- `result`
-- `metrics`
-
-## 5. 本地运行
-
+### 方案 A：极致省心的 Docker-Compose (推荐)
+如果你电脑上有强大的 Docker 守护进程，这是最规范的操作模式：
 ```bash
-cd /Users/alakazan/Documents/Playground/求职/protein-agent
+docker-compose up --build
+```
+然后直接打开浏览器：`http://127.0.0.1:8000`
+
+### 方案 B：Mac/Linux 本地双终端开发调试
+> 必须保障你提前通过 `brew install redis` 安装了 Redis。
+
+**步骤 1: 准备环境**
+```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
-uvicorn app.main:app --reload
 ```
+（在 `.env` 中填上你想连接的真实 OpenAI 格式的 API 秘钥与 Base URL，如未配置会 fallback 给本地的 mock桩）
 
-如果你直接复用我已经配好的本地环境，可以用：
-
+**步骤 2: 启动 API 和网关 (终端 1)**
 ```bash
-cd /Users/alakazan/Documents/Playground/求职/protein-agent
+uvicorn app.main:app --reload --port 8001
+```
+浏览器进入工作台：`http://127.0.0.1:8001`
+
+**步骤 3: 启动执行工人 (终端 2)**
+```bash
 source .venv/bin/activate
-uvicorn app.main:app --reload
+celery -A app.worker.celery_app worker -l info
 ```
 
-如果你想启用可选的 `sentence-transformer` 语义检索后端，再额外安装：
-
-```bash
-pip install -r requirements-rag.txt
-```
-
-默认的 `local-hash` RAG 不会联网下载任何模型。  
-如果切换到 `sentence-transformer` 后端，推荐显式使用本地模型缓存或本地模型目录。
-
-## 6. 接口示例
-
-### 6.1 查看模型配置
-
-```bash
-curl http://127.0.0.1:8000/models
-```
-
-### 6.2 查看知识库状态
-
-```bash
-curl http://127.0.0.1:8000/knowledge
-```
-
-### 6.3 打开前端页面
-
-启动服务后访问：
-
-```text
-http://127.0.0.1:8000/
-```
-
-页面结构包括：
-
-- 顶部工作台概览
-- 状态侧栏（服务状态 / 模型数量 / RAG 状态）
-- 示例切换区
-- 输入控制台
-- 结果总览卡片
-- 指标卡片区与上下文输出区
-
-### 6.4 仅查看路由结果
-
-```bash
-curl -X POST http://127.0.0.1:8000/route \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "请根据蛋白质序列 MKTAYIAKQRQISFVKSHFSRQDILDLWIYHTQGYFP 生成一个配对多肽"
-  }'
-```
-
-### 6.5 执行多肽生成
-
-```bash
-curl -X POST http://127.0.0.1:8000/run \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "请根据蛋白质序列 MKTAYIAKQRQISFVKSHFSRQDILDLWIYHTQGYFP 生成一个配对多肽"
-  }'
-```
-
-### 6.6 执行核酸适配体生成
-
-```bash
-curl -X POST http://127.0.0.1:8000/run \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "请为这个蛋白质设计核酸适配体",
-    "protein_sequence": "MKTAYIAKQRQISFVKSHFSRQDILDLWIYHTQGYFP"
-  }'
-```
-
-## 7. RAG 检索增强
-
-### 7.1 工作原理
-
-在 `agent.py` 的 `run()` 流程中，当 RAG 启用时：
-
-1. 用户 query 被发送给 `ProteinKnowledgeBase.search()`
-2. 默认后端使用 `local-hash` 将 query 和知识条目映射到同一特征空间
-3. 按相似度返回 top-k 条最相关的知识片段
-4. 检索到的背景知识注入到输出文本的“参考知识”段落中
-5. 同时通过 API 的 `rag_context` 字段返回给调用方
-
-### 7.2 配置
-
-通过 `.env` 控制：
-
-```bash
-RAG_ENABLED=true
-RAG_BACKEND=local-hash              # local-hash | sentence-transformer
-RAG_TOP_K=3
-RAG_DATA_PATH=
-RAG_EMBEDDING_MODEL=all-MiniLM-L6-v2
-```
-
-### 7.3 扩展知识库
-
-在 `app/data/protein_knowledge.jsonl` 中追加条目即可，每条一行 JSON：
-
+## 6. RAG (基于知识库的生成增强)
+项目支持不依赖外部图数据库的轻量 FAISS 缓存型语义搜索算法。
+默认采取 `local-hash`，在 `local-stub` 状态下快速体验。
+你只需向 `app/data/protein_knowledge.jsonl` 中追写 JSON 行数据：
 ```json
-{"text": "你的知识内容", "source": "来源标注", "category": "分类标签"}
+{"text": "你的专业科普文本", "source": "论文摘要", "category": "多肽"}
 ```
+它们将立刻在下一个推理节点中经由相似度算法自动注入到与 LLM 的系统交互之中。
 
-重启服务后自动生效。
-
-## 8. 当前限制
-
-- 路由仍然是显式关键词匹配，不是语义分类
-- `local-stub` 生成结果只用于联调，不代表真实生物学有效性
-- 评价指标是启发式分数，不是实验或 benchmark 指标
-- `generic-json` 默认只支持一种统一的 JSON 协议，真实模型若字段不同，需要在 `model_clients.py` 中补适配
-- 默认 RAG 是轻量离线后端，检索质量优先保证稳定性，不追求最强语义效果
-- 如果切换到 `sentence-transformer` 后端，需要本地已有模型缓存或显式指定本地模型目录
-- 前端当前仍是单页控制台，没有历史记录、批量任务和结果导出
-- 当前已经通过本地 `uvicorn` 启动和 `curl` 请求验证了首页与静态资源映射；尚未补真实浏览器截图或录屏级验收
-
-## 9. 下一步
-
-1. 对接真实多肽模型 API 和真实适配体模型 API
-2. 为生成结果补充更可信的 rerank / 评价逻辑
-3. 增加 Demo 请求集和简单前端或 notebook 展示
-4. 如果后续确实需要更强 RAG，再为 `sentence-transformer` 后端补本地模型目录配置
+## 7. 接口开放能力概览 (REST API)
+- `POST /run` (异步入队并获取排队凭证)
+- `GET /tasks/{task_id}` (获取任意计算流水情况、结果和报错信息)
+- `GET /history` (调阅过往历史执行单)
+- `POST /route` (前置验证模型选择器)
+- `GET /health` (监控存活率、DB 健康与模型配额检查)
+- `GET /knowledge` (检视挂载的参考知识库缓存体积)

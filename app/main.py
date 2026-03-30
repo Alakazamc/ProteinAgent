@@ -1,19 +1,38 @@
 from __future__ import annotations
 
+import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Optional
+from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
+import sqlalchemy as sa
 
 from .agent import ProteinAgent, ProteinAgentError
 from .config import load_config
+from .database import Base, engine, get_db
 from .knowledge_base import get_cached_knowledge_base
 from .model_clients import ModelClientError
+from .models import AgentExecutionRecord, JobStatus
+from .worker import run_agent_task
+
+logger = logging.getLogger(__name__)
 
 
-app = FastAPI(title="Protein Agent API", version="0.2.0")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Initialize the database
+    async with engine.begin() as conn:
+        # Create all tables (WARNING: this is for development; in production use Alembic)
+        await conn.run_sync(Base.metadata.create_all)
+    yield
+
+
+app = FastAPI(title="Protein Agent API", version="0.3.0", lifespan=lifespan)
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 
@@ -46,16 +65,10 @@ class RagChunkResponse(BaseModel):
     score: float
 
 
-class RunResponse(BaseModel):
-    task_type: str
-    matched_keywords: list[str]
-    route_reason: str
-    selected_model: SelectedModelResponse
-    protein_sequence: str
-    generated_sequence: Optional[str] = None
-    output_text: str
-    metrics: dict[str, Any]
-    rag_context: list[RagChunkResponse]
+class TaskCreatedResponse(BaseModel):
+    task_id: str
+    status: str
+    message: str
 
 
 def _build_agent() -> ProteinAgent:
@@ -80,12 +93,22 @@ def index() -> FileResponse:
 
 
 @app.get("/health")
-def health() -> dict[str, object]:
+async def health(db: AsyncSession = Depends(get_db)) -> dict[str, object]:
     agent = _build_agent_with_options(include_knowledge_base=True)
     kb = agent.knowledge_base
+    
+    # Simple db health check
+    db_ok = False
+    try:
+        await db.execute(sa.text("SELECT 1"))
+        db_ok = True
+    except Exception:
+        pass
+        
     return {
         "status": "ok",
         "service": "protein-agent",
+        "database": "ok" if db_ok else "error",
         "models": agent.list_models(),
         "rag": {
             "enabled": kb is not None and kb.ready,
@@ -132,45 +155,57 @@ def route(payload: RunRequest) -> RouteResponse:
     )
 
 
-@app.post("/run", response_model=RunResponse)
-def run(payload: RunRequest) -> RunResponse:
-    agent = _build_agent_with_options(include_knowledge_base=True)
-    try:
-        result = agent.run(
-            query=payload.query,
-            protein_sequence=payload.protein_sequence,
-            include_metrics=payload.include_metrics,
-        )
-    except ModelClientError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    except ProteinAgentError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+@app.post("/run", response_model=TaskCreatedResponse)
+async def run(payload: RunRequest, db: AsyncSession = Depends(get_db)) -> TaskCreatedResponse:
+    """Async endpoint that queues the agent task and returns a task_id immediately."""
+    task_id = str(uuid4())
+    
+    # Save the initial PENDING state in the database
+    record = AgentExecutionRecord(
+        task_id=task_id,
+        status=JobStatus.PENDING,
+        request_query=payload.query,
+        input_sequence=payload.protein_sequence,
+    )
+    db.add(record)
+    await db.commit()
+    
+    # Dispatch Celery background task
+    run_agent_task.delay(
+        task_id, 
+        payload.query, 
+        payload.protein_sequence, 
+        payload.include_metrics
+    )
+    
+    return TaskCreatedResponse(
+        task_id=task_id,
+        status=JobStatus.PENDING,
+        message="Job created and is running in the background."
+    )
 
-    selected_model = SelectedModelResponse(
-        task_type=result.task_type.value,
-        provider=result.selected_model_provider,
-        model_name=result.selected_model_name,
-        base_url=result.selected_model_base_url,
-        configured=(
-            result.selected_model_provider == "local-stub"
-            or bool(result.selected_model_base_url)
-        ),
-    )
-    rag_chunks = [
-        RagChunkResponse(text=c["text"], source=c["source"], score=c["score"])
-        for c in result.rag_context
-    ]
-    return RunResponse(
-        task_type=result.task_type.value,
-        matched_keywords=list(result.matched_keywords),
-        route_reason=result.route_reason,
-        selected_model=selected_model,
-        protein_sequence=result.protein_sequence,
-        generated_sequence=result.generated_sequence,
-        output_text=result.output_text,
-        metrics=result.metrics,
-        rag_context=rag_chunks,
-    )
+
+@app.get("/tasks/{task_id}")
+async def get_task_status(task_id: str, db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    """Poll for the status of an agent execution task."""
+    stmt = sa.select(AgentExecutionRecord).where(AgentExecutionRecord.task_id == task_id)
+    result = await db.execute(stmt)
+    record = result.scalar_one_or_none()
+    
+    if not record:
+        raise HTTPException(status_code=404, detail="Task not found")
+        
+    return record.to_dict()
+
+
+@app.get("/history")
+async def get_task_history(limit: int = 50, db: AsyncSession = Depends(get_db)) -> list[dict[str, Any]]:
+    """Retrieve the history of past agent executions, ordered by latest first."""
+    stmt = sa.select(AgentExecutionRecord).order_by(AgentExecutionRecord.created_at.desc()).limit(limit)
+    result = await db.execute(stmt)
+    records = result.scalars().all()
+    
+    return [r.to_dict() for r in records]
 
 
 @app.get("/static/{asset_path:path}", include_in_schema=False)

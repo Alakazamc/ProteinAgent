@@ -108,13 +108,86 @@ class GenericJsonSequenceModelClient(SequenceModelClient):
         return _parse_generic_json_response(response_payload)
 
 
+@dataclass
+class OpenAICompatibleSequenceModelClient(SequenceModelClient):
+    def run(
+        self,
+        model_request: ModelExecutionRequest,
+        model_config: ModelConfig,
+    ) -> ModelExecutionResult:
+        if not model_config.base_url:
+            raise ModelClientError(f"{model_config.task_type} 缺少 MODEL_BASE_URL 配置。")
+
+        endpoint = model_config.base_url.rstrip("/")
+        if not endpoint.endswith("/chat/completions"):
+            endpoint += "/chat/completions"
+
+        system_prompt = "你是一个专业的高级生物信息学助手和蛋白质工程师。请根据用户的要求输出严谨的生物学分析、预测报告或候选序列。如果你的任务是生成全新的候选序列（如多肽、适配体等），请务必在回答中将最终的完整序列内容包裹在 <sequence> 和 </sequence> 标签内以便系统进行结构化提取。"
+        
+        user_content = f"任务描述：{model_request.query}"
+        if model_request.protein_sequence:
+            user_content += f"\n输入野生型蛋白质/靶点序列：{model_request.protein_sequence}"
+
+        payload_dict = {
+            "model": model_config.model_name,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_content}
+            ],
+            "temperature": 0.2
+        }
+        payload = json.dumps(payload_dict).encode("utf-8")
+
+        headers = {"Content-Type": "application/json"}
+        if model_config.api_key:
+            headers["Authorization"] = f"Bearer {model_config.api_key}"
+
+        http_request = request.Request(endpoint, data=payload, headers=headers, method="POST")
+
+        try:
+            with request.urlopen(http_request, timeout=model_config.timeout_seconds) as response:
+                response_payload = json.loads(response.read().decode("utf-8"))
+        except error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="ignore")
+            raise ModelClientError(
+                f"{model_config.model_name} 请求失败，状态码 {exc.code}: {detail or exc.reason}"
+            ) from exc
+        except error.URLError as exc:
+            raise ModelClientError(f"{model_config.model_name} 网络请求失败: {exc.reason}") from exc
+        except Exception as exc:
+            raise ModelClientError(f"未知异常: {str(exc)}") from exc
+
+        choices = response_payload.get("choices", [])
+        if not choices:
+            raise ModelClientError("模型响应中没有内容 (无 choices 字段)。")
+            
+        content = choices[0].get("message", {}).get("content", "")
+        
+        # 尝试提取 <sequence> 标签内的内容
+        generated_sequence = None
+        import re
+        match = re.search(r"<sequence>(.*?)</sequence>", content, flags=re.IGNORECASE | re.DOTALL)
+        if match:
+            # 清理可能的空格或换行
+            generated_sequence = "".join(match.group(1).split())
+            
+        return ModelExecutionResult(
+            output_text=content,
+            generated_sequence=generated_sequence,
+            metrics={},
+            raw_payload=response_payload
+        )
+
+
 def build_model_client(provider: str) -> SequenceModelClient:
     if provider == "local-stub":
         return LocalStubSequenceModelClient()
     if provider == "generic-json":
         return GenericJsonSequenceModelClient()
+    if provider == "openai-compatible":
+        return OpenAICompatibleSequenceModelClient()
     raise ModelClientError(
-        f"不支持的模型 provider: {provider}。当前只支持 local-stub 和 generic-json。"
+        f"不支持的模型 provider: {provider}。当前只支持 local-stub, generic-json 和 openai-compatible。"
     )
 
 

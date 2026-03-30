@@ -36,6 +36,8 @@ const elements = {
   includeMetrics: document.getElementById("include-metrics"),
   checkHealth: document.getElementById("check-health"),
   exampleButtons: Array.from(document.querySelectorAll("[data-example]")),
+  historyList: document.getElementById("history-list"),
+  refreshHistory: document.getElementById("refresh-history"),
 };
 
 function setExample(exampleName) {
@@ -124,7 +126,7 @@ function renderRagContext(ragContext) {
 function renderResult(data) {
   elements.taskType.textContent = data.task_type || "-";
   elements.matchedKeywords.textContent = (data.matched_keywords || []).join(", ") || "-";
-  elements.selectedModel.textContent = `${data.selected_model.model_name} (${data.selected_model.provider})`;
+  elements.selectedModel.textContent = data.model_name ? `${data.model_name} (${data.model_provider})` : "-";
   elements.generatedSequence.textContent = data.generated_sequence || "-";
   elements.ragHitCount.textContent = String((data.rag_context || []).length);
   elements.routeReason.textContent = data.route_reason || "-";
@@ -149,7 +151,7 @@ async function refreshHealth() {
     const models = await modelsResponse.json();
     const configuredModels = models.filter((item) => item.configured);
 
-    elements.serviceStatus.textContent = health.status === "ok" ? "服务正常" : "服务异常";
+    elements.serviceStatus.textContent = health.status === "ok" ? "健康 (DB: " + health.database + ")" : "服务异常";
     elements.modelCount.textContent = `${configuredModels.length} / ${models.length}`;
 
     if (health.rag) {
@@ -162,11 +164,74 @@ async function refreshHealth() {
     }
 
     setStatus("状态已刷新，可以发起请求。");
+    loadHistory();
   } catch (error) {
     elements.serviceStatus.textContent = "检测失败";
     elements.modelCount.textContent = "0";
     elements.ragStatus.textContent = "检测失败";
     setStatus(`状态检测失败: ${error.message}`, "error");
+  }
+}
+
+async function fetchHistory() {
+  const res = await fetch("/history");
+  if (!res.ok) throw new Error("获取历史记录失败");
+  return await res.json();
+}
+
+async function loadHistory() {
+  try {
+    const records = await fetchHistory();
+    if (records.length === 0) {
+      elements.historyList.innerHTML = '<p class="metric-empty" style="padding: 2rem; color: #64748b;">暂无查询记录</p>';
+      return;
+    }
+    
+    elements.historyList.innerHTML = records.map(record => `
+      <article class="output-card" style="margin-bottom: 1rem; cursor: pointer; border: 1px solid var(--border);" onclick='loadRecordIntoView(${JSON.stringify(record).replace(/'/g, "&#39;")})'>
+        <p class="section-label" style="display: flex; justify-content: space-between;">
+          <span>[${record.status}] ${new Date(record.created_at).toLocaleString()}</span>
+          <span>${record.task_type || 'Unknown'}</span>
+        </p>
+        <div style="font-size: 0.85rem; color: var(--text-dark); margin-top: 5px;">
+          <strong>Query:</strong> ${record.request_query}
+        </div>
+        ${record.error_message ? `<div style="color: red; padding-top: 4px; font-size: 0.8rem;">🚨 Exception: ${record.error_message}</div>` : ""}
+      </article>
+    `).join("");
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+window.loadRecordIntoView = function(record) {
+    if (record.status === "SUCCESS") {
+        renderResult(record);
+        setStatus("正在查看历史任务: " + record.task_id, "success");
+    } else {
+        setStatus("当前任务尚未成功，状态: " + record.status, "idle");
+    }
+};
+
+async function pollTask(taskId) {
+  try {
+    const response = await fetch(`/tasks/${taskId}`);
+    const data = await response.json();
+    
+    if (data.status === "SUCCESS") {
+      renderResult(data);
+      setStatus("请求成功，结果已更新。", "success");
+      loadHistory();
+    } else if (data.status === "FAILED") {
+      setStatus(`请求失败: ${data.error_message}`, "error");
+      loadHistory();
+    } else {
+      // PENDING or RUNNING
+      setStatus(`后台异步执行中... (${data.status}) - ID: ${taskId}`, "loading");
+      setTimeout(() => pollTask(taskId), 2500);
+    }
+  } catch (error) {
+    setStatus(`轮询失败: ${error.message}`, "error");
   }
 }
 
@@ -178,7 +243,7 @@ async function runAgent(event) {
     include_metrics: elements.includeMetrics.checked,
   };
 
-  setStatus("正在调用 /run ...", "loading");
+  setStatus("正在派发后台任务...", "loading");
 
   try {
     const response = await fetch("/run", {
@@ -194,28 +259,34 @@ async function runAgent(event) {
       throw new Error(data.detail || "请求失败");
     }
 
-    renderResult(data);
-    setStatus("请求成功，结果已更新。", "success");
-  } catch (error) {
-    elements.outputText.textContent = String(error.message || error);
-    elements.routeReason.textContent = "-";
-    elements.ragContext.textContent = "无相关背景知识。";
-    elements.generatedSequence.textContent = "-";
-    elements.taskType.textContent = "-";
+    // Clear previous results while polling
+    elements.outputText.textContent = "执行中...";
+    elements.routeReason.textContent = "等待后台结果...";
+    elements.ragContext.textContent = "检索中...";
+    elements.generatedSequence.textContent = "生成中...";
+    elements.taskType.textContent = "解析中...";
     elements.selectedModel.textContent = "-";
     elements.matchedKeywords.textContent = "-";
-    elements.ragHitCount.textContent = "0";
+    elements.ragHitCount.textContent = "-";
     renderMetrics({});
-    setStatus(`请求失败: ${error.message}`, "error");
+    
+    // Begin polling
+    pollTask(data.task_id);
+    
+  } catch (error) {
+    setStatus(`发起任务失败: ${error.message}`, "error");
   }
 }
 
+// Event Listeners
 elements.form.addEventListener("submit", runAgent);
 elements.checkHealth.addEventListener("click", refreshHealth);
+elements.refreshHistory.addEventListener("click", loadHistory);
 elements.exampleButtons.forEach((button) => {
   button.addEventListener("click", () => setExample(button.dataset.example));
 });
 
+// Initialization
 setExample("peptide");
 renderMetrics({});
 refreshHealth();

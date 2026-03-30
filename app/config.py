@@ -35,6 +35,8 @@ class AppConfig:
     rag_data_path: str | None = None
     rag_backend: str = "local-hash"
     rag_embedding_model: str = "all-MiniLM-L6-v2"
+    db_url: str = "sqlite+aiosqlite:///./protein_agent.db"
+    celery_broker_url: str = "redis://localhost:6379/0"
 
 
 def load_dotenv(env_path: Path | None = None) -> None:
@@ -79,6 +81,8 @@ def load_config() -> AppConfig:
             os.getenv("RAG_EMBEDDING_MODEL", "all-MiniLM-L6-v2").strip()
             or "all-MiniLM-L6-v2"
         ),
+        db_url=os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./protein_agent.db"),
+        celery_broker_url=os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0"),
     )
 
 
