@@ -232,14 +232,18 @@ body::before {
   font-size: 1.88rem;
 }
 
-.example-band {
+.example-hints {
   display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-bottom: 18px;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
 }
 
-.example-chip,
+.hint-label {
+  color: var(--muted);
+}
+
+.example-link,
 button {
   border: none;
   border-radius: 999px;
@@ -247,30 +251,30 @@ button {
   font: inherit;
   font-weight: 700;
   cursor: pointer;
-  transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease;
+  transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease, color 160ms ease;
 }
 
-button:hover,
-.example-chip:hover {
-  transform: translateY(-1px);
+.example-link {
+  background: transparent;
+  border: none;
+  padding: 2px 6px;
+  color: var(--accent);
+  border-radius: 4px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: transparent;
 }
 
-button:active,
-.example-chip:active {
-  transform: translateY(0);
+.example-link:hover {
+  transform: none;
+  text-decoration-color: var(--accent);
 }
 
-.example-chip {
-  background: rgba(255, 255, 255, 0.84);
-  border: 1px solid rgba(23, 34, 31, 0.1);
+.example-link.is-active {
   color: var(--ink);
-}
-
-.example-chip.is-active {
-  background: linear-gradient(135deg, rgba(15, 118, 110, 0.15), rgba(15, 118, 110, 0.24));
-  color: var(--teal);
-  border-color: rgba(15, 118, 110, 0.22);
-  box-shadow: 0 10px 26px rgba(15, 118, 110, 0.12);
+  font-weight: 700;
+  text-decoration-color: var(--ink);
 }
 
 .field {

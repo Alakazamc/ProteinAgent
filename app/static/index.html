@@ -74,20 +74,16 @@
             <button type="submit" class="primary-button">执行 Agent</button>
           </div>
 
-          <div class="example-band">
-            <button type="button" class="example-chip" data-example="peptide">
-              多肽示例
-            </button>
-            <button type="button" class="example-chip" data-example="aptamer">
-              适配体示例
-            </button>
-            <button type="button" class="example-chip" data-example="protein">
-              预测示例
-            </button>
-          </div>
-
           <label class="field field-query">
-            <span>任务描述 Query</span>
+            <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px;">
+              <span>对话/指令 (大模型会自动决策路由)</span>
+              <div class="example-hints">
+                <span class="hint-label">💡 点此快捷输入测试语：</span>
+                <button type="button" class="example-link" data-example="peptide">多肽片段</button>
+                <button type="button" class="example-link" data-example="aptamer">核酸适配体</button>
+                <button type="button" class="example-link" data-example="protein">蛋白质跑分</button>
+              </div>
+            </div>
             <textarea
               id="query"
               name="query"
