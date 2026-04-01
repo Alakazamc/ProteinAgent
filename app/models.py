@@ -35,6 +35,7 @@ class AgentExecutionRecord(Base):
     
     # Outputs / Results
     task_type = Column(String(50), nullable=True)
+    matched_keywords = Column(JSON, nullable=True)
     model_provider = Column(String(50), nullable=True)
     model_name = Column(String(100), nullable=True)
     generated_sequence = Column(String, nullable=True)
@@ -44,6 +45,7 @@ class AgentExecutionRecord(Base):
     # JSON Fields (For nested metadata)
     metrics = Column(JSON, nullable=True)
     rag_context = Column(JSON, nullable=True)
+    trace_events = Column(JSON, nullable=True)
     error_message = Column(String, nullable=True)
     
     # Timestamps
@@ -58,6 +60,7 @@ class AgentExecutionRecord(Base):
             "request_query": self.request_query,
             "input_sequence": self.input_sequence,
             "task_type": self.task_type,
+            "matched_keywords": self.matched_keywords or [],
             "model_provider": self.model_provider,
             "model_name": self.model_name,
             "generated_sequence": self.generated_sequence,
@@ -65,6 +68,7 @@ class AgentExecutionRecord(Base):
             "output_text": self.output_text,
             "metrics": self.metrics,
             "rag_context": self.rag_context,
+            "trace_events": self.trace_events or [],
             "error_message": self.error_message,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,

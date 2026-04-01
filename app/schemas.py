@@ -34,6 +34,22 @@ class ModelExecutionResult:
 
 
 @dataclass(frozen=True)
+class TraceEvent:
+    step: str
+    title: str
+    detail: str = ""
+    status: str = "completed"
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "step": self.step,
+            "title": self.title,
+            "detail": self.detail,
+            "status": self.status,
+        }
+
+
+@dataclass(frozen=True)
 class AgentExecutionResult:
     task_type: TaskType
     matched_keywords: tuple[str, ...]
@@ -46,5 +62,5 @@ class AgentExecutionResult:
     generated_sequence: str | None
     metrics: dict[str, Any]
     rag_context: list[dict[str, Any]] = field(default_factory=list)
-
+    trace_events: list[dict[str, str]] = field(default_factory=list)
 

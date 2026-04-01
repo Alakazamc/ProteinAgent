@@ -1,16 +1,33 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from .config import AppConfig, ModelConfig
 from .knowledge_base import ProteinKnowledgeBase, get_cached_knowledge_base
 from .metrics import compute_metrics
 from .model_clients import build_model_client
 from .router import RouteError, route_query
-from .schemas import AgentExecutionResult, ModelExecutionRequest, TaskType
+from .schemas import (
+    AgentExecutionResult,
+    ModelExecutionRequest,
+    ModelExecutionResult,
+    RouteDecision,
+    TaskType,
+    TraceEvent,
+)
 from .sequence_utils import SequenceError, extract_protein_sequence, normalize_protein_sequence
 
 
 class ProteinAgentError(Exception):
     pass
+
+
+@dataclass(frozen=True)
+class PreparedAgentRun:
+    route_decision: RouteDecision
+    protein_sequence: str
+    model_config: ModelConfig
+    rag_context: list[dict]
 
 
 class ProteinAgent:
@@ -40,6 +57,19 @@ class ProteinAgent:
         protein_sequence: str | None = None,
         include_metrics: bool = True,
     ) -> AgentExecutionResult:
+        prepared = self.prepare_execution(query=query, protein_sequence=protein_sequence)
+        model_result = self.run_model(query=query, prepared=prepared)
+        return self.finalize_execution(
+            prepared=prepared,
+            model_result=model_result,
+            include_metrics=include_metrics,
+        )
+
+    def prepare_execution(
+        self,
+        query: str,
+        protein_sequence: str | None = None,
+    ) -> PreparedAgentRun:
         if not query.strip():
             raise ProteinAgentError("query 不能为空。")
 
@@ -49,54 +79,76 @@ class ProteinAgent:
         except (RouteError, SequenceError) as exc:
             raise ProteinAgentError(str(exc)) from exc
 
-        # --- RAG retrieval ---
         rag_chunks: list[dict] = []
         if self._kb and self._kb.ready:
             retrieved = self._kb.search(query, top_k=self._config.rag_top_k)
             rag_chunks = [chunk.to_dict() for chunk in retrieved]
 
         model_config = self._select_model_config(route_decision.task_type)
-        model_client = build_model_client(model_config.provider)
-        model_result = model_client.run(
-            ModelExecutionRequest(
-                task_type=route_decision.task_type,
-                query=query,
-                protein_sequence=resolved_sequence,
-            ),
+        return PreparedAgentRun(
+            route_decision=route_decision,
+            protein_sequence=resolved_sequence,
             model_config=model_config,
+            rag_context=rag_chunks,
         )
 
+    def run_model(
+        self,
+        query: str,
+        prepared: PreparedAgentRun,
+    ) -> ModelExecutionResult:
+        model_client = build_model_client(prepared.model_config.provider)
+        return model_client.run(
+            ModelExecutionRequest(
+                task_type=prepared.route_decision.task_type,
+                query=query,
+                protein_sequence=prepared.protein_sequence,
+            ),
+            model_config=prepared.model_config,
+        )
+
+    def finalize_execution(
+        self,
+        prepared: PreparedAgentRun,
+        model_result: ModelExecutionResult,
+        include_metrics: bool = True,
+    ) -> AgentExecutionResult:
         metrics = {}
         if include_metrics:
             metrics = _merge_metrics(
                 model_result.metrics,
                 compute_metrics(
-                    task_type=route_decision.task_type.value,
-                    protein_sequence=resolved_sequence,
+                    task_type=prepared.route_decision.task_type.value,
+                    protein_sequence=prepared.protein_sequence,
                     generated_sequence=model_result.generated_sequence,
                 ),
             )
 
         output_text = _compose_output_text(
-            task_type=route_decision.task_type,
+            task_type=prepared.route_decision.task_type,
             model_text=model_result.output_text,
             generated_sequence=model_result.generated_sequence,
             metrics=metrics,
-            rag_chunks=rag_chunks,
+            rag_chunks=prepared.rag_context,
         )
 
         return AgentExecutionResult(
-            task_type=route_decision.task_type,
-            matched_keywords=route_decision.matched_keywords,
-            route_reason=route_decision.reason,
-            protein_sequence=resolved_sequence,
-            selected_model_name=model_config.model_name,
-            selected_model_provider=model_config.provider,
-            selected_model_base_url=model_config.base_url,
+            task_type=prepared.route_decision.task_type,
+            matched_keywords=prepared.route_decision.matched_keywords,
+            route_reason=prepared.route_decision.reason,
+            protein_sequence=prepared.protein_sequence,
+            selected_model_name=prepared.model_config.model_name,
+            selected_model_provider=prepared.model_config.provider,
+            selected_model_base_url=prepared.model_config.base_url,
             output_text=output_text,
             generated_sequence=model_result.generated_sequence,
             metrics=metrics,
-            rag_context=rag_chunks,
+            rag_context=prepared.rag_context,
+            trace_events=_build_trace_events(
+                prepared=prepared,
+                generated_sequence=model_result.generated_sequence,
+                metrics=metrics,
+            ),
         )
 
     @property
@@ -171,3 +223,71 @@ def _compose_output_text(
             lines.append(f"  [{i}] {chunk['text']}  (来源: {chunk['source']})")
 
     return "\n".join(line for line in lines if line is not None)
+
+
+def _build_trace_events(
+    prepared: PreparedAgentRun,
+    generated_sequence: str | None,
+    metrics: dict[str, object],
+) -> list[dict[str, str]]:
+    keyword_summary = "、".join(prepared.route_decision.matched_keywords) or "无"
+    trace_events = [
+        TraceEvent(
+            step="route",
+            title="识别任务类型",
+            detail=(
+                f"{prepared.route_decision.task_type.value}，命中关键词：{keyword_summary}"
+            ),
+        ).to_dict(),
+        TraceEvent(
+            step="sequence",
+            title="提取蛋白质序列",
+            detail=f"已规范化输入序列，长度 {len(prepared.protein_sequence)}。",
+        ).to_dict(),
+        TraceEvent(
+            step="rag",
+            title="检索领域知识",
+            detail=f"返回 {len(prepared.rag_context)} 条相关上下文。",
+        ).to_dict(),
+        TraceEvent(
+            step="model",
+            title="选择执行模型",
+            detail=(
+                f"{prepared.model_config.model_name} "
+                f"({prepared.model_config.provider})"
+            ),
+        ).to_dict(),
+    ]
+
+    if generated_sequence:
+        trace_events.append(
+            TraceEvent(
+                step="generation",
+                title="生成候选结果",
+                detail=f"生成候选序列，长度 {len(generated_sequence)}。",
+            ).to_dict()
+        )
+    else:
+        trace_events.append(
+            TraceEvent(
+                step="prediction",
+                title="完成预测摘要",
+                detail="模型返回文本分析结果，未生成新序列。",
+            ).to_dict()
+        )
+
+    trace_events.append(
+        TraceEvent(
+            step="metrics",
+            title="整理评价指标",
+            detail=f"输出 {len(metrics)} 项结构化指标。",
+        ).to_dict()
+    )
+    trace_events.append(
+        TraceEvent(
+            step="complete",
+            title="生成最终答复",
+            detail="结果已可供前端展示和详情页查看。",
+        ).to_dict()
+    )
+    return trace_events

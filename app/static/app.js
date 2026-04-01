@@ -4,7 +4,7 @@ const EXAMPLES = {
     proteinSequence: "",
   },
   aptamer: {
-    query: "请为这个蛋白质设计一个核酸适配体",
+    query: "请为这个蛋白质设计一个 RNA 核酸适配体",
     proteinSequence: "MKTAYIAKQRQISFVKSHFSRQDILDLWIYHTQGYFP",
   },
   protein: {
@@ -13,225 +13,326 @@ const EXAMPLES = {
   },
 };
 
+const {
+  escapeHtml,
+  fetchJson,
+  formatTaskLabel,
+  setActiveNav,
+} = window.ProteinUI;
+
 const elements = {
   serviceStatus: document.getElementById("service-status"),
   modelCount: document.getElementById("model-count"),
   ragStatus: document.getElementById("rag-status"),
-  taskType: document.getElementById("task-type"),
-  matchedKeywords: document.getElementById("matched-keywords"),
-  selectedModel: document.getElementById("selected-model"),
-  generatedSequence: document.getElementById("generated-sequence"),
-  ragHitCount: document.getElementById("rag-hit-count"),
-  metricCount: document.getElementById("metric-count"),
-  metricSummary: document.getElementById("metric-summary"),
-  metricsGrid: document.getElementById("metrics-grid"),
-  routeReason: document.getElementById("route-reason"),
-  outputText: document.getElementById("output-text"),
-  ragContext: document.getElementById("rag-context"),
-  requestStatus: document.getElementById("request-status"),
-  requestBadge: document.getElementById("request-badge"),
   form: document.getElementById("run-form"),
   query: document.getElementById("query"),
   proteinSequence: document.getElementById("protein-sequence"),
   includeMetrics: document.getElementById("include-metrics"),
   checkHealth: document.getElementById("check-health"),
+  requestStatus: document.getElementById("request-status"),
+  requestBadge: document.getElementById("request-badge"),
+  thread: document.getElementById("thread"),
+  threadEmpty: document.getElementById("thread-empty"),
   exampleButtons: Array.from(document.querySelectorAll("[data-example]")),
-  historyList: document.getElementById("history-list"),
-  refreshHistory: document.getElementById("refresh-history"),
 };
 
-function setExample(exampleName) {
-  const example = EXAMPLES[exampleName];
+const taskRenderState = new Map();
+
+function setExample(name) {
+  const example = EXAMPLES[name];
   if (!example) {
     return;
   }
-
   elements.query.value = example.query;
   elements.proteinSequence.value = example.proteinSequence;
-  elements.exampleButtons.forEach((button) => {
-    button.classList.toggle("is-active", button.dataset.example === exampleName);
-  });
 }
 
 function setStatus(message, state = "idle") {
   elements.requestStatus.textContent = message;
-  elements.requestStatus.classList.remove("status-error", "status-loading");
-  elements.requestBadge.classList.remove("is-loading", "is-error", "is-success");
+  elements.requestBadge.className = "status-pill";
 
   if (state === "loading") {
-    elements.requestStatus.classList.add("status-loading");
-    elements.requestBadge.classList.add("is-loading");
-    elements.requestBadge.textContent = "请求中";
+    elements.requestBadge.classList.add("is-running");
+    elements.requestBadge.textContent = "RUNNING";
     return;
   }
-
-  if (state === "error") {
-    elements.requestStatus.classList.add("status-error");
-    elements.requestBadge.classList.add("is-error");
-    elements.requestBadge.textContent = "请求失败";
-    return;
-  }
-
   if (state === "success") {
     elements.requestBadge.classList.add("is-success");
-    elements.requestBadge.textContent = "请求成功";
+    elements.requestBadge.textContent = "SUCCESS";
     return;
   }
-
-  elements.requestBadge.textContent = "等待请求";
-}
-
-function formatValue(value) {
-  if (typeof value === "number") {
-    return Number.isInteger(value) ? String(value) : value.toFixed(3);
-  }
-  return String(value);
-}
-
-function renderMetrics(metrics) {
-  const entries = Object.entries(metrics || {});
-  elements.metricCount.textContent = String(entries.length);
-  elements.metricSummary.textContent = entries.length > 0 ? `${entries.length} 项指标` : "无指标";
-
-  if (entries.length === 0) {
-    elements.metricsGrid.innerHTML = '<article class="metric-empty">当前没有可展示的评价指标。</article>';
+  if (state === "error") {
+    elements.requestBadge.classList.add("is-error");
+    elements.requestBadge.textContent = "FAILED";
     return;
   }
+  elements.requestBadge.textContent = "IDLE";
+}
 
-  elements.metricsGrid.innerHTML = entries
-    .map(
-      ([key, value]) => `
-        <article class="metric-card">
-          <p class="card-label">${key}</p>
-          <strong>${formatValue(value)}</strong>
-        </article>
-      `
-    )
+function toggleEmptyState(visible) {
+  elements.threadEmpty.classList.toggle("is-hidden", !visible);
+}
+
+function appendMessage(html) {
+  toggleEmptyState(false);
+  const wrapper = document.createElement("div");
+  wrapper.innerHTML = html.trim();
+  elements.thread.appendChild(wrapper.firstElementChild);
+  elements.thread.scrollTop = elements.thread.scrollHeight;
+}
+
+function getTaskState(taskId) {
+  if (!taskRenderState.has(taskId)) {
+    taskRenderState.set(taskId, {
+      visibleCount: 0,
+      revealTimer: null,
+      latestTask: null,
+      terminalNotified: false,
+    });
+  }
+  return taskRenderState.get(taskId);
+}
+
+function addUserMessage(payload) {
+  appendMessage(`
+    <article class="message message-user">
+      <div class="message-meta">Request</div>
+      <div class="message-card">
+        <p class="message-text">${escapeHtml(payload.query)}</p>
+        ${
+          payload.protein_sequence
+            ? `<pre class="inline-sequence">${escapeHtml(payload.protein_sequence)}</pre>`
+            : ""
+        }
+      </div>
+    </article>
+  `);
+}
+
+function findOrCreateAgentMessage(taskId) {
+  const current = elements.thread.querySelector(`[data-task-id="${taskId}"]`);
+  if (current) {
+    return current;
+  }
+
+  appendMessage(`
+    <article class="message message-agent" data-task-id="${escapeHtml(taskId)}">
+      <div class="message-meta">Protein Agent</div>
+      <div class="message-card">
+        <div class="message-heading">
+          <strong class="message-title">任务已受理</strong>
+          <a class="detail-link is-hidden" href="#">查看完整结果</a>
+        </div>
+        <p class="message-summary">请求已提交至后台执行链路，系统正在准备任务环境。</p>
+        <section class="thinking-block">
+          <div class="thinking-head">
+            <span class="thinking-tag">Execution Trace</span>
+            <span class="thinking-state">处理中</span>
+          </div>
+          <div class="thinking-stream">
+            <article class="thinking-line thinking-line-placeholder">系统正在整理当前任务的执行轨迹。</article>
+          </div>
+        </section>
+      </div>
+    </article>
+  `);
+
+  return elements.thread.querySelector(`[data-task-id="${taskId}"]`);
+}
+
+function toThinkingText(event) {
+  const step = event.step || "";
+  const detail = event.detail || "";
+  if (step === "queued") return "任务已进入队列，等待后台执行资源接管。";
+  if (step === "running") return "后台 worker 已接手任务，开始解析请求内容。";
+  if (step === "route") return `系统已完成任务识别与路由判断：${detail}`;
+  if (step === "sequence") return `系统已完成输入序列校验与规范化：${detail}`;
+  if (step === "rag") return `系统已完成知识库检索：${detail}`;
+  if (step === "model") return `系统已选择执行模型：${detail}`;
+  if (step === "model-output") return detail || "模型已返回原始输出，正在整理结果。";
+  if (step === "generation") return `系统已拿到候选生成结果：${detail}`;
+  if (step === "prediction") return `系统已完成预测结果整理：${detail}`;
+  if (step === "metrics") return `系统已计算结构化评价指标：${detail}`;
+  if (step === "complete") return "任务结果已整理完成，可进入详情页查看完整信息。";
+  if (step === "failed") return `任务执行失败，系统返回原因：${detail}`;
+  return detail || event.title || "系统正在处理当前任务。";
+}
+
+function renderThinking(events) {
+  if (!events || events.length === 0) {
+    return '<article class="thinking-line thinking-line-placeholder">系统正在整理当前任务的执行轨迹。</article>';
+  }
+
+  return events
+    .map((event) => {
+      const status = escapeHtml(event.status || "completed");
+      const isLast = event === events[events.length - 1];
+      return `<article class="thinking-line thinking-line-${status} ${isLast ? "is-fresh" : ""}">${escapeHtml(toThinkingText(event))}</article>`;
+    })
     .join("");
 }
 
-function renderRagContext(ragContext) {
-  if (!ragContext || ragContext.length === 0) {
-    return "无相关背景知识。";
+function buildSummary(task, settled) {
+  if (!settled) {
+    return "系统正在按步骤展开当前任务的执行轨迹。";
   }
-
-  return ragContext
-    .map(
-      (chunk, index) =>
-        `[${index + 1}] score=${Number(chunk.score).toFixed(4)}\n${chunk.text}\n来源: ${chunk.source}`
-    )
-    .join("\n\n");
+  if (task.status === "FAILED") {
+    return task.error_message || "任务执行失败，请查看详情页中的错误信息。";
+  }
+  if (task.task_type === "protein_prediction" && task.metrics?.prediction_label) {
+    return `蛋白质评分任务已完成，预测标签为 ${task.metrics.prediction_label}。`;
+  }
+  if (task.generated_sequence) {
+    return "任务已完成，候选结果与评价指标已整理完毕。";
+  }
+  return "任务已完成，完整执行结果已可查看。";
 }
 
-function renderResult(data) {
-  elements.taskType.textContent = data.task_type || "-";
-  elements.matchedKeywords.textContent = (data.matched_keywords || []).join(", ") || "-";
-  elements.selectedModel.textContent = data.model_name ? `${data.model_name} (${data.model_provider})` : "-";
-  elements.generatedSequence.textContent = data.generated_sequence || "-";
-  elements.ragHitCount.textContent = String((data.rag_context || []).length);
-  elements.routeReason.textContent = data.route_reason || "-";
-  elements.outputText.textContent = data.output_text || "-";
-  elements.ragContext.textContent = renderRagContext(data.rag_context || []);
-  renderMetrics(data.metrics || {});
+function getDisplayPhase(task, settled) {
+  if (!settled) {
+    return "PROCESSING";
+  }
+  return task.status || "PENDING";
+}
+
+function isTerminal(task) {
+  return task.status === "SUCCESS" || task.status === "FAILED";
+}
+
+function finalizeTaskStatus(task, state) {
+  if (!isTerminal(task) || state.terminalNotified) {
+    return;
+  }
+
+  if (task.status === "SUCCESS") {
+    setStatus("任务执行完成，完整结果已可查看。", "success");
+  } else {
+    setStatus(`任务执行失败：${task.error_message || "未知错误"}`, "error");
+  }
+  state.terminalNotified = true;
+}
+
+function scheduleTraceReveal(taskId) {
+  const state = getTaskState(taskId);
+  const task = state.latestTask;
+  const total = task?.trace_events?.length ?? 0;
+
+  if (!task) {
+    return;
+  }
+
+  if (state.visibleCount >= total) {
+    finalizeTaskStatus(task, state);
+    return;
+  }
+
+  if (state.revealTimer) {
+    return;
+  }
+
+  const delay = state.visibleCount === 0 ? 180 : 420;
+  state.revealTimer = window.setTimeout(() => {
+    state.revealTimer = null;
+
+    const currentTask = state.latestTask;
+    const currentTotal = currentTask?.trace_events?.length ?? 0;
+    if (state.visibleCount < currentTotal) {
+      state.visibleCount += 1;
+      updateAgentMessage(currentTask);
+    }
+
+    scheduleTraceReveal(taskId);
+  }, delay);
+}
+
+function updateAgentMessage(task) {
+  const renderState = getTaskState(task.task_id);
+  renderState.latestTask = task;
+
+  const totalEvents = task.trace_events?.length ?? 0;
+  if (renderState.visibleCount > totalEvents) {
+    renderState.visibleCount = totalEvents;
+  }
+  if (!isTerminal(task)) {
+    renderState.terminalNotified = false;
+  }
+
+  const card = findOrCreateAgentMessage(task.task_id);
+  const visibleEvents = (task.trace_events || []).slice(0, renderState.visibleCount);
+  const settled = renderState.visibleCount >= totalEvents && isTerminal(task);
+  const taskLabel = task.task_type ? formatTaskLabel(task.task_type) : "任务处理中";
+
+  card.querySelector(".message-title").textContent = `${getDisplayPhase(task, settled)} · ${taskLabel}`;
+  card.querySelector(".message-summary").textContent = buildSummary(task, settled);
+  card.querySelector(".thinking-stream").innerHTML = renderThinking(visibleEvents);
+
+  const thinkingState = card.querySelector(".thinking-state");
+  if (settled && task.status === "SUCCESS") {
+    thinkingState.textContent = "已完成";
+  } else if (settled && task.status === "FAILED") {
+    thinkingState.textContent = "失败";
+  } else {
+    thinkingState.textContent = "处理中";
+  }
+
+  const link = card.querySelector(".detail-link");
+  if (settled) {
+    link.href = `/tasks/${encodeURIComponent(task.task_id)}/view`;
+    link.classList.remove("is-hidden");
+  } else {
+    link.classList.add("is-hidden");
+  }
+
+  elements.thread.scrollTop = elements.thread.scrollHeight;
+  scheduleTraceReveal(task.task_id);
+  if (settled) {
+    finalizeTaskStatus(task, getTaskState(task.task_id));
+  }
+  return settled;
 }
 
 async function refreshHealth() {
-  setStatus("正在检查服务状态...", "loading");
+  setStatus("正在同步系统运行状态...", "loading");
   try {
-    const [healthResponse, modelsResponse] = await Promise.all([
-      fetch("/health"),
-      fetch("/models"),
+    const [health, models] = await Promise.all([
+      fetchJson("/health"),
+      fetchJson("/models"),
     ]);
-
-    if (!healthResponse.ok || !modelsResponse.ok) {
-      throw new Error("服务状态接口返回失败");
-    }
-
-    const health = await healthResponse.json();
-    const models = await modelsResponse.json();
-    const configuredModels = models.filter((item) => item.configured);
-
-    elements.serviceStatus.textContent = health.status === "ok" ? "健康 (DB: " + health.database + ")" : "服务异常";
-    elements.modelCount.textContent = `${configuredModels.length} / ${models.length}`;
-
-    if (health.rag) {
-      const ragInfo = health.rag;
-      elements.ragStatus.textContent = ragInfo.enabled
-        ? `已启用 (${ragInfo.backend}, ${ragInfo.entries} 条)`
-        : "未启用";
-    } else {
-      elements.ragStatus.textContent = "未检测到";
-    }
-
-    setStatus("状态已刷新，可以发起请求。");
-    loadHistory();
+    const configured = models.filter((item) => item.configured);
+    elements.serviceStatus.textContent = health.status === "ok" ? `在线 / DB ${health.database}` : "异常";
+    elements.modelCount.textContent = `${configured.length} / ${models.length}`;
+    elements.ragStatus.textContent = health.rag?.enabled
+      ? `${health.rag.backend} · ${health.rag.entries} 条`
+      : "未启用";
+    setStatus("系统状态已同步，可以提交新任务。");
   } catch (error) {
     elements.serviceStatus.textContent = "检测失败";
-    elements.modelCount.textContent = "0";
+    elements.modelCount.textContent = "0 / 0";
     elements.ragStatus.textContent = "检测失败";
-    setStatus(`状态检测失败: ${error.message}`, "error");
+    setStatus(`系统状态读取失败：${error.message}`, "error");
   }
 }
-
-async function fetchHistory() {
-  const res = await fetch("/history");
-  if (!res.ok) throw new Error("获取历史记录失败");
-  return await res.json();
-}
-
-async function loadHistory() {
-  try {
-    const records = await fetchHistory();
-    if (records.length === 0) {
-      elements.historyList.innerHTML = '<p class="metric-empty" style="padding: 2rem; color: #64748b;">暂无查询记录</p>';
-      return;
-    }
-    
-    elements.historyList.innerHTML = records.map(record => `
-      <article class="output-card" style="margin-bottom: 1rem; cursor: pointer; border: 1px solid var(--border);" onclick='loadRecordIntoView(${JSON.stringify(record).replace(/'/g, "&#39;")})'>
-        <p class="section-label" style="display: flex; justify-content: space-between;">
-          <span>[${record.status}] ${new Date(record.created_at).toLocaleString()}</span>
-          <span>${record.task_type || 'Unknown'}</span>
-        </p>
-        <div style="font-size: 0.85rem; color: var(--text-dark); margin-top: 5px;">
-          <strong>Query:</strong> ${record.request_query}
-        </div>
-        ${record.error_message ? `<div style="color: red; padding-top: 4px; font-size: 0.8rem;">🚨 Exception: ${record.error_message}</div>` : ""}
-      </article>
-    `).join("");
-  } catch (err) {
-    console.error(err);
-  }
-}
-
-window.loadRecordIntoView = function(record) {
-    if (record.status === "SUCCESS") {
-        renderResult(record);
-        setStatus("正在查看历史任务: " + record.task_id, "success");
-    } else {
-        setStatus("当前任务尚未成功，状态: " + record.status, "idle");
-    }
-};
 
 async function pollTask(taskId) {
   try {
-    const response = await fetch(`/tasks/${taskId}`);
-    const data = await response.json();
-    
-    if (data.status === "SUCCESS") {
-      renderResult(data);
-      setStatus("请求成功，结果已更新。", "success");
-      loadHistory();
-    } else if (data.status === "FAILED") {
-      setStatus(`请求失败: ${data.error_message}`, "error");
-      loadHistory();
-    } else {
-      // PENDING or RUNNING
-      setStatus(`后台异步执行中... (${data.status}) - ID: ${taskId}`, "loading");
-      setTimeout(() => pollTask(taskId), 2500);
+    const task = await fetchJson(`/tasks/${encodeURIComponent(taskId)}`);
+    const settled = updateAgentMessage(task);
+    if (task.status === "SUCCESS") {
+      if (!settled) {
+        setStatus("模型已返回，系统正在逐步展开执行轨迹...", "loading");
+      }
+      return;
     }
+    if (task.status === "FAILED") {
+      if (!settled) {
+        setStatus("任务已结束，系统正在逐步展开失败轨迹...", "loading");
+      }
+      return;
+    }
+    setStatus(`任务 ${task.task_id} 正在后台执行...`, "loading");
+    window.setTimeout(() => pollTask(taskId), 1200);
   } catch (error) {
-    setStatus(`轮询失败: ${error.message}`, "error");
+    setStatus(`任务状态读取失败：${error.message}`, "error");
   }
 }
 
@@ -243,50 +344,59 @@ async function runAgent(event) {
     include_metrics: elements.includeMetrics.checked,
   };
 
-  setStatus("正在派发后台任务...", "loading");
+  if (!payload.query) {
+    setStatus("请先填写任务请求。", "error");
+    return;
+  }
+
+  addUserMessage(payload);
+  elements.query.value = "";
+  setStatus("正在提交任务请求...", "loading");
 
   try {
-    const response = await fetch("/run", {
+    const task = await fetchJson("/run", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.detail || "请求失败");
-    }
-
-    // Clear previous results while polling
-    elements.outputText.textContent = "执行中...";
-    elements.routeReason.textContent = "等待后台结果...";
-    elements.ragContext.textContent = "检索中...";
-    elements.generatedSequence.textContent = "生成中...";
-    elements.taskType.textContent = "解析中...";
-    elements.selectedModel.textContent = "-";
-    elements.matchedKeywords.textContent = "-";
-    elements.ragHitCount.textContent = "-";
-    renderMetrics({});
-    
-    // Begin polling
-    pollTask(data.task_id);
-    
+    const state = getTaskState(task.task_id);
+    state.visibleCount = 0;
+    state.terminalNotified = false;
+    updateAgentMessage({
+      task_id: task.task_id,
+      status: task.status,
+      task_type: "",
+      trace_events: [
+        {
+          step: "queued",
+          detail: "请求已提交，等待后台执行。",
+          status: "queued",
+        },
+      ],
+    });
+    pollTask(task.task_id);
   } catch (error) {
-    setStatus(`发起任务失败: ${error.message}`, "error");
+    appendMessage(`
+      <article class="message message-agent">
+        <div class="message-meta">Protein Agent</div>
+        <div class="message-card">
+          <strong class="message-title">请求提交失败</strong>
+          <p class="message-summary">${escapeHtml(error.message)}</p>
+        </div>
+      </article>
+    `);
+    setStatus(`任务提交失败：${error.message}`, "error");
   }
 }
 
-// Event Listeners
+setActiveNav("chat");
+setExample("protein");
+toggleEmptyState(true);
+
 elements.form.addEventListener("submit", runAgent);
 elements.checkHealth.addEventListener("click", refreshHealth);
-elements.refreshHistory.addEventListener("click", loadHistory);
 elements.exampleButtons.forEach((button) => {
   button.addEventListener("click", () => setExample(button.dataset.example));
 });
 
-// Initialization
-setExample("peptide");
-renderMetrics({});
 refreshHealth();

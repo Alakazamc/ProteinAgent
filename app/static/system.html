@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Protein Agent System</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body class="page-body page-system">
+    <div class="page-atmosphere"></div>
+
+    <header class="site-header">
+      <a class="brand-lockup" href="/">
+        <span class="brand-mark">PA</span>
+        <span class="brand-copy">
+          <strong>Protein Agent</strong>
+          <small>Protein Task Orchestration Console</small>
+        </span>
+      </a>
+
+      <nav class="site-nav" aria-label="Primary">
+        <a class="nav-link" data-nav="chat" href="/">Chat</a>
+        <a class="nav-link" data-nav="archive" href="/archive">Archive</a>
+        <a class="nav-link" data-nav="system" href="/system">System</a>
+      </nav>
+
+      <div class="header-status">
+        <button id="refresh-system" type="button" class="ghost-pill">同步状态</button>
+      </div>
+    </header>
+
+    <main class="page-shell">
+      <section class="page-hero page-hero-compact">
+        <div class="hero-copy">
+          <p class="eyebrow">System Overview</p>
+          <h1>集中查看服务运行状态、模型配置与知识库准备情况。</h1>
+          <p class="hero-text">当前页面用于核对系统可用性、模型绑定情况以及检索增强数据是否就绪。</p>
+        </div>
+      </section>
+
+      <section class="system-grid">
+        <section class="system-board">
+          <div class="board-head">
+            <div>
+              <p class="eyebrow">Service Overview</p>
+              <h2>运行概况</h2>
+            </div>
+            <p id="system-note" class="board-note">加载中</p>
+          </div>
+          <div id="system-summary" class="summary-grid">
+            <article class="summary-card"><p>服务</p><strong>--</strong></article>
+            <article class="summary-card"><p>数据库</p><strong>--</strong></article>
+            <article class="summary-card"><p>RAG</p><strong>--</strong></article>
+          </div>
+        </section>
+
+        <section class="system-board">
+          <div class="board-head">
+            <div>
+              <p class="eyebrow">Model Bindings</p>
+              <h2>模型配置</h2>
+            </div>
+          </div>
+          <div id="system-models" class="model-grid">
+            <p class="empty-copy">正在读取模型配置...</p>
+          </div>
+        </section>
+
+        <section class="system-board system-board-wide">
+          <div class="board-head">
+            <div>
+              <p class="eyebrow">Knowledge Base</p>
+              <h2>知识库概览</h2>
+            </div>
+          </div>
+          <div id="system-knowledge" class="knowledge-list">
+            <p class="empty-copy">正在读取知识库...</p>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <script src="/static/shared.js"></script>
+    <script src="/static/system.js"></script>
+  </body>
+</html>

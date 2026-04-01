@@ -50,6 +50,8 @@ class ProteinAgentTests(unittest.TestCase):
         self.assertEqual(result.task_type, TaskType.PEPTIDE_GENERATION)
         self.assertTrue(result.generated_sequence)
         self.assertIn("binding_proxy_score", result.metrics)
+        self.assertEqual(result.trace_events[0]["step"], "route")
+        self.assertEqual(result.trace_events[-1]["step"], "complete")
 
     def test_run_aptamer_generation_with_explicit_sequence(self) -> None:
         result = self.agent.run(
@@ -67,6 +69,9 @@ class ProteinAgentTests(unittest.TestCase):
         )
         self.assertEqual(result.task_type, TaskType.PROTEIN_PREDICTION)
         self.assertIn("prediction_label", result.metrics)
+        trace_steps = [event["step"] for event in result.trace_events]
+        self.assertIn("prediction", trace_steps)
+        self.assertIn("metrics", trace_steps)
 
     def test_run_requires_sequence(self) -> None:
         with self.assertRaises(ProteinAgentError):

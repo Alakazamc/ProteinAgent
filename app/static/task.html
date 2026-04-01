@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Protein Agent Task Detail</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body class="page-body page-detail">
+    <div class="page-atmosphere"></div>
+
+    <header class="site-header">
+      <a class="brand-lockup" href="/">
+        <span class="brand-mark">PA</span>
+        <span class="brand-copy">
+          <strong>Protein Agent</strong>
+          <small>Protein Task Orchestration Console</small>
+        </span>
+      </a>
+
+      <nav class="site-nav" aria-label="Primary">
+        <a class="nav-link" data-nav="chat" href="/">Chat</a>
+        <a class="nav-link" data-nav="archive" href="/archive">Archive</a>
+        <a class="nav-link" data-nav="system" href="/system">System</a>
+      </nav>
+
+      <div class="header-status">
+        <a class="ghost-pill" href="/archive">返回任务档案</a>
+      </div>
+    </header>
+
+    <main class="page-shell">
+      <section class="page-hero page-hero-compact">
+        <div class="hero-copy">
+          <p class="eyebrow">Task Detail</p>
+          <h1 id="detail-title">正在载入任务详情</h1>
+          <p id="detail-subtitle" class="hero-text">请稍候，系统正在读取完整执行记录。</p>
+        </div>
+        <div class="hero-actions">
+          <span id="detail-status" class="status-pill">LOADING</span>
+          <span id="detail-task-id" class="detail-id">task_id: --</span>
+        </div>
+      </section>
+
+      <section class="detail-layout">
+        <section class="detail-main">
+          <article class="content-panel">
+            <div class="board-head">
+              <div>
+                <p class="eyebrow">Execution Trace</p>
+                <h2>执行轨迹</h2>
+              </div>
+            </div>
+            <ol id="detail-trace" class="trace-list">
+              <li class="trace-row">
+                <span class="trace-bullet"></span>
+                <div>
+                  <p class="trace-title">等待任务数据</p>
+                  <p class="trace-detail">系统尚未读取到执行轨迹记录。</p>
+                </div>
+              </li>
+            </ol>
+          </article>
+
+          <article class="content-panel">
+            <div class="board-head">
+              <div>
+                <p class="eyebrow">Model Output</p>
+                <h2>文本输出</h2>
+              </div>
+            </div>
+            <pre id="detail-output" class="code-block">等待模型输出</pre>
+          </article>
+
+          <article class="content-panel">
+            <div class="board-head">
+              <div>
+                <p class="eyebrow">RAG Context</p>
+                <h2>检索增强上下文</h2>
+              </div>
+            </div>
+            <div id="detail-rag" class="knowledge-list">
+              <p class="empty-copy">暂无上下文。</p>
+            </div>
+          </article>
+        </section>
+
+        <aside class="detail-side">
+          <article class="content-panel">
+            <div class="board-head">
+              <div>
+                <p class="eyebrow">Summary</p>
+                <h2>任务概览</h2>
+              </div>
+            </div>
+            <dl class="summary-list">
+              <div class="summary-row">
+                <dt>任务类型</dt>
+                <dd id="detail-task-type">--</dd>
+              </div>
+              <div class="summary-row">
+                <dt>命中关键词</dt>
+                <dd id="detail-keywords">--</dd>
+              </div>
+              <div class="summary-row">
+                <dt>模型</dt>
+                <dd id="detail-model">--</dd>
+              </div>
+              <div class="summary-row">
+                <dt>创建时间</dt>
+                <dd id="detail-created-at">--</dd>
+              </div>
+              <div class="summary-row">
+                <dt>完成时间</dt>
+                <dd id="detail-completed-at">--</dd>
+              </div>
+            </dl>
+          </article>
+
+          <article class="content-panel">
+            <div class="board-head">
+              <div>
+                <p class="eyebrow">Generated Result</p>
+                <h2>候选结果</h2>
+              </div>
+            </div>
+            <pre id="detail-sequence" class="code-block">暂无候选序列</pre>
+          </article>
+
+          <article class="content-panel">
+            <div class="board-head">
+              <div>
+                <p class="eyebrow">Metrics</p>
+                <h2>评价指标</h2>
+              </div>
+            </div>
+            <div id="detail-metrics" class="metric-grid">
+              <p class="empty-copy">暂无指标。</p>
+            </div>
+          </article>
+
+          <article class="content-panel">
+            <div class="board-head">
+              <div>
+                <p class="eyebrow">Original Request</p>
+                <h2>原始请求</h2>
+              </div>
+            </div>
+            <pre id="detail-query" class="code-block">--</pre>
+          </article>
+        </aside>
+      </section>
+    </main>
+
+    <script src="/static/shared.js"></script>
+    <script src="/static/task.js"></script>
+  </body>
+</html>

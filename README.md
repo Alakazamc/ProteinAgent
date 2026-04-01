@@ -3,7 +3,7 @@
 这是我在 `Agent / AI 应用工程` 方向上的第二个专门项目。  
 它和第一个通用聊天 agent 不同，定位是一个面向 `蛋白质序列 -> 任务路由 -> 模型调用 -> 异步结果回收` 的专门 Agent 工程。
 
-当前版本已经不是最早的同步版本，而是一个带有 `FastAPI + Celery + Redis + SQLite + 原生前端工作台` 的异步任务骨架，适合拿来做作品集展示、真实模型 API 对接和后续工程化扩展。
+当前版本已经不是最早的同步版本，而是一个带有 `FastAPI + Celery + Redis + SQLite + 多页面任务控制台 + 任务详情页` 的异步任务骨架，适合拿来做作品集展示、真实模型 API 对接和后续工程化扩展。
 
 ## 1. 当前项目阶段
 
@@ -11,9 +11,10 @@
 
 - 已完成蛋白任务的专用路由与核心业务骨架
 - 已升级为异步任务执行模式
-- 已补上前端工作台、历史记录和持久化
+- 已补上 `Chat / Archive / System / Task Detail` 多页面前端结构、历史记录和持久化
 - 已支持 `local-stub`、`generic-json`、`openai-compatible` 三种模型接入方式
-- 已具备作品集展示价值，但还没有把异步链路的稳定性和真实模型接入完全收尾
+- 已支持可展示的 `trace_events` 执行轨迹，并在聊天主页面中按步骤逐步展开
+- 已具备作品集展示价值，但还没有把真实模型接入和更完整的集成测试完全收尾
 
 ## 2. 当前功能
 
@@ -31,12 +32,13 @@
 - 在模型调用前检索蛋白质领域知识作为 RAG 上下文
 - 异步下发任务，立即返回 `task_id`
 - 通过 `/tasks/{task_id}` 轮询查看任务状态
+- 在任务执行过程中写入 `trace_events`，用于前端展示“思考轨迹 / 执行轨迹”
 - 将历史任务写入 SQLite，并通过 `/history` 返回
 - 前端页面支持：
-  - 状态检查
-  - 示例填充
-  - 结果卡片展示
-  - 历史记录回看
+  - `Chat` 页面提交任务并逐步展示执行轨迹
+  - `Archive` 页面单独查看历史任务档案
+  - `System` 页面查看服务状态、模型配置和知识库准备情况
+  - `Task Detail` 页面查看完整结果、指标、RAG 上下文和原始输出
 
 ### 2.3 当前模型接入方式
 
@@ -195,15 +197,16 @@
 
 对应功能：
 
-- 展示任务输入区、状态区、结果卡片和历史记录
+- 展示对话输入区、思考轨迹、任务档案和详情页
 - 调用 `/health`、`/run`、`/tasks/{task_id}`、`/history`
 - 轮询异步任务状态
-- 让这个项目不只是“接口能用”，而是“可直接演示”
+- 将主对话和完整结果拆开，提升展示层次
 
 为什么适合这里：
 
 - 这个项目的重点是 Agent 工作流，不是大型前端工程
 - 原生前端足够支撑展示，同时不会把注意力转移到框架搭建上
+- 前端可以快速表达“聊天主界面 + 详情页”的产品形态
 
 #### `local-hash RAG`
 
@@ -266,16 +269,23 @@
 用户在前端或接口发起 POST /run
 -> FastAPI 创建 task_id，并在 SQLite 中写入一条 PENDING 记录
 -> FastAPI 把任务派发给 Celery
--> Worker 读取任务，执行 ProteinAgent.run(...)
--> Agent 完成：
+-> Worker 读取任务，先把状态改为 RUNNING，并持续追加 trace_events
+-> Worker 调用 ProteinAgent.prepare_execution(...)
    - 关键词路由
    - 蛋白质序列解析
    - RAG 检索
-   - 调用对应模型 provider
-   - 合并模型输出和本地指标
+   - 选择模型
+-> Worker 调用对应模型并生成候选结果或预测摘要
+-> Worker 合并模型输出和本地指标，整理最终 AgentExecutionResult
 -> Worker 把 SUCCESS / FAILED 结果写回 SQLite
--> 前端轮询 /tasks/{task_id} 并刷新结果
--> /history 提供历史记录查看
+-> 前端主页面轮询 /tasks/{task_id}
+   - 对话区按步骤逐步展示执行轨迹
+-> 用户点击“查看完整结果”后，跳转到 /tasks/{task_id}/view
+   - 查看候选序列
+   - 查看评价指标
+   - 查看 RAG 上下文
+   - 查看完整文本输出
+-> 用户也可以通过 /archive 查看历史档案，通过 /system 查看运行状态和模型配置
 ```
 
 ### 3.5 当前状态说明
@@ -311,8 +321,17 @@ protein-agent/
 │   ├── data/
 │   │   └── protein_knowledge.jsonl
 │   └── static/
+│       ├── archive.html
+│       ├── archive.js
 │       ├── app.js
+│       ├── favicon.svg
 │       ├── index.html
+│       ├── protein-field.svg
+│       ├── shared.js
+│       ├── system.html
+│       ├── system.js
+│       ├── task.html
+│       ├── task.js
 │       └── styles.css
 └── tests/
     ├── test_agent.py
@@ -330,12 +349,16 @@ protein-agent/
 当前接口：
 
 - `GET /`
+- `GET /chat`
+- `GET /archive`
+- `GET /system`
 - `GET /health`
 - `GET /models`
 - `GET /knowledge`
 - `POST /route`
 - `POST /run`
 - `GET /tasks/{task_id}`
+- `GET /tasks/{task_id}/view`
 - `GET /history`
 - `GET /static/{asset_path}`
 
@@ -346,7 +369,8 @@ protein-agent/
 当前行为：
 
 - 接收 `task_id + query + protein_sequence + include_metrics`
-- 调用 `ProteinAgent.run(...)`
+- 分阶段执行 `prepare_execution(...)`、`run_model(...)`、`finalize_execution(...)`
+- 在 `RUNNING -> SUCCESS / FAILED` 过程中持续追加 `trace_events`
 - 将结果写回 `agent_executions` 表
 - 失败时把异常写入 `error_message`
 
@@ -437,7 +461,7 @@ protein-agent/
 
 ### [app/static/index.html](/Users/alakazan/Documents/Playground/求职/protein-agent/app/static/index.html)
 
-负责工作台页面结构。
+负责 `Chat` 页面结构。
 
 ### [app/static/app.js](/Users/alakazan/Documents/Playground/求职/protein-agent/app/static/app.js)
 
@@ -445,9 +469,38 @@ protein-agent/
 
 当前行为：
 
-- 调用 `/health`、`/models`、`/run`、`/tasks/{task_id}`、`/history`
+- 调用 `/health`、`/models`、`/run`、`/tasks/{task_id}`
 - 发起任务后轮询状态
-- 展示历史记录并支持回看
+- 将 `trace_events` 以分步 reveal 的方式逐条展示在主对话中
+- 任务完成后提供详情页跳转入口
+
+### [app/static/archive.html](/Users/alakazan/Documents/Playground/求职/protein-agent/app/static/archive.html)
+
+负责 `Archive` 页面结构。
+
+### [app/static/archive.js](/Users/alakazan/Documents/Playground/求职/protein-agent/app/static/archive.js)
+
+负责读取 `/history` 并按状态筛选任务档案。
+
+### [app/static/system.html](/Users/alakazan/Documents/Playground/求职/protein-agent/app/static/system.html)
+
+负责 `System` 页面结构。
+
+### [app/static/system.js](/Users/alakazan/Documents/Playground/求职/protein-agent/app/static/system.js)
+
+负责读取 `/health`、`/models`、`/knowledge` 并展示系统状态。
+
+### [app/static/task.html](/Users/alakazan/Documents/Playground/求职/protein-agent/app/static/task.html)
+
+负责任务详情页结构。
+
+### [app/static/task.js](/Users/alakazan/Documents/Playground/求职/protein-agent/app/static/task.js)
+
+负责详情页数据读取、轮询和结构化渲染。
+
+### [app/static/shared.js](/Users/alakazan/Documents/Playground/求职/protein-agent/app/static/shared.js)
+
+负责多页面共享的前端格式化和导航逻辑。
 
 ### [tests/test_agent.py](/Users/alakazan/Documents/Playground/求职/protein-agent/tests/test_agent.py)
 

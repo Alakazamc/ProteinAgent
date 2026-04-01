@@ -14,10 +14,10 @@ import sqlalchemy as sa
 
 from .agent import ProteinAgent, ProteinAgentError
 from .config import load_config
-from .database import Base, engine, get_db
+from .database import get_db, initialize_database
 from .knowledge_base import get_cached_knowledge_base
-from .model_clients import ModelClientError
 from .models import AgentExecutionRecord, JobStatus
+from .schemas import TraceEvent
 from .worker import run_agent_task
 
 logger = logging.getLogger(__name__)
@@ -25,10 +25,7 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Initialize the database
-    async with engine.begin() as conn:
-        # Create all tables (WARNING: this is for development; in production use Alembic)
-        await conn.run_sync(Base.metadata.create_all)
+    await initialize_database()
     yield
 
 
@@ -90,6 +87,26 @@ def _build_agent_with_options(include_knowledge_base: bool) -> ProteinAgent:
 @app.get("/", include_in_schema=False)
 def index() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/chat", include_in_schema=False)
+def chat_page() -> FileResponse:
+    return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/archive", include_in_schema=False)
+def archive_page() -> FileResponse:
+    return FileResponse(STATIC_DIR / "archive.html")
+
+
+@app.get("/system", include_in_schema=False)
+def system_page() -> FileResponse:
+    return FileResponse(STATIC_DIR / "system.html")
+
+
+@app.get("/tasks/{task_id}/view", include_in_schema=False)
+def task_view(task_id: str) -> FileResponse:
+    return FileResponse(STATIC_DIR / "task.html")
 
 
 @app.get("/health")
@@ -159,25 +176,31 @@ def route(payload: RunRequest) -> RouteResponse:
 async def run(payload: RunRequest, db: AsyncSession = Depends(get_db)) -> TaskCreatedResponse:
     """Async endpoint that queues the agent task and returns a task_id immediately."""
     task_id = str(uuid4())
-    
-    # Save the initial PENDING state in the database
+
     record = AgentExecutionRecord(
         task_id=task_id,
         status=JobStatus.PENDING,
         request_query=payload.query,
         input_sequence=payload.protein_sequence,
+        trace_events=[
+            TraceEvent(
+                step="queued",
+                title="任务已创建",
+                detail="请求已进入队列，等待后台 worker 执行。",
+                status="queued",
+            ).to_dict()
+        ],
     )
     db.add(record)
     await db.commit()
-    
-    # Dispatch Celery background task
+
     run_agent_task.delay(
-        task_id, 
-        payload.query, 
-        payload.protein_sequence, 
+        task_id,
+        payload.query,
+        payload.protein_sequence,
         payload.include_metrics
     )
-    
+
     return TaskCreatedResponse(
         task_id=task_id,
         status=JobStatus.PENDING,

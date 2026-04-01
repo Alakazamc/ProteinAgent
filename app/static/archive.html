@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Protein Agent Archive</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body class="page-body page-archive">
+    <div class="page-atmosphere"></div>
+
+    <header class="site-header">
+      <a class="brand-lockup" href="/">
+        <span class="brand-mark">PA</span>
+        <span class="brand-copy">
+          <strong>Protein Agent</strong>
+          <small>Protein Task Orchestration Console</small>
+        </span>
+      </a>
+
+      <nav class="site-nav" aria-label="Primary">
+        <a class="nav-link" data-nav="chat" href="/">Chat</a>
+        <a class="nav-link" data-nav="archive" href="/archive">Archive</a>
+        <a class="nav-link" data-nav="system" href="/system">System</a>
+      </nav>
+
+      <div class="header-status">
+        <button id="refresh-history" type="button" class="ghost-pill">刷新档案</button>
+      </div>
+    </header>
+
+    <main class="page-shell page-shell-archive">
+      <section class="page-hero page-hero-compact">
+        <div class="hero-copy">
+          <p class="eyebrow">Archive Center</p>
+          <h1>集中查看任务档案与已完成执行记录。</h1>
+          <p class="hero-text">当前页面专门用于归档浏览。点击任意任务记录即可进入结构化详情页。</p>
+        </div>
+      </section>
+
+      <section class="archive-layout">
+        <aside class="filter-panel">
+          <p class="eyebrow">Filter</p>
+          <div class="filter-group">
+            <button type="button" class="ghost-pill is-active" data-filter="all">全部</button>
+            <button type="button" class="ghost-pill" data-filter="SUCCESS">成功</button>
+            <button type="button" class="ghost-pill" data-filter="FAILED">失败</button>
+          </div>
+        </aside>
+
+        <section class="archive-board">
+          <div class="board-head">
+            <div>
+              <p class="eyebrow">History Records</p>
+              <h2>任务档案</h2>
+            </div>
+            <p id="archive-count" class="board-note">加载中</p>
+          </div>
+
+          <div id="archive-list" class="archive-list">
+            <p class="empty-copy">正在读取任务档案...</p>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <script src="/static/shared.js"></script>
+    <script src="/static/archive.js"></script>
+  </body>
+</html>

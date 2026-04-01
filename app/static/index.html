@@ -3,208 +3,136 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Protein Agent</title>
+    <title>Protein Agent Console</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
-  <body>
+  <body class="page-body page-chat">
+    <div class="page-atmosphere"></div>
+
+    <header class="site-header">
+      <a class="brand-lockup" href="/">
+        <span class="brand-mark">PA</span>
+        <span class="brand-copy">
+          <strong>Protein Agent</strong>
+          <small>Protein Task Orchestration Console</small>
+        </span>
+      </a>
+
+      <nav class="site-nav" aria-label="Primary">
+        <a class="nav-link" data-nav="chat" href="/">Chat</a>
+        <a class="nav-link" data-nav="archive" href="/archive">Archive</a>
+        <a class="nav-link" data-nav="system" href="/system">System</a>
+      </nav>
+
+      <div class="header-status">
+        <span id="request-badge" class="status-pill">IDLE</span>
+      </div>
+    </header>
+
     <main class="page-shell">
-      <header class="masthead">
-        <div class="masthead-copy">
-          <p class="eyebrow">Protein Agent Workspace</p>
-          <h1>蛋白质任务路由与生成工作台</h1>
-          <p class="masthead-text">
-            这是一个面向蛋白质序列任务的轻量控制台。你可以在同一页里完成
-            <span>多肽生成</span>、<span>核酸适配体生成</span>、<span>蛋白质预测</span>
-            的请求编排，并即时查看命中关键词、模型选择、启发式指标和 RAG 上下文。
+      <section class="page-hero">
+        <div class="hero-copy">
+          <p class="eyebrow">Task Console</p>
+          <h1>蛋白任务从这里发起，执行结果进入独立详情页归档。</h1>
+          <p class="hero-text">
+            当前页面用于提交任务、查看分步执行轨迹，并在任务完成后跳转到结构化详情页。历史记录与系统运行状态已拆分为独立子页面。
           </p>
-          <div class="hero-tags">
-            <span class="hero-tag">关键词路由</span>
-            <span class="hero-tag">离线友好 RAG</span>
-            <span class="hero-tag">FastAPI 单服务</span>
-            <span class="hero-tag">本地 Stub / 真实 API</span>
-          </div>
         </div>
 
-        <aside class="hero-rail">
-          <div class="signal-card">
-            <p class="signal-label">服务状态</p>
-            <strong id="service-status">等待检测</strong>
-            <span class="signal-note">健康检查 + API 可用性</span>
-          </div>
-          <div class="signal-card">
-            <p class="signal-label">已配置模型</p>
-            <strong id="model-count">0</strong>
-            <span class="signal-note">基于 `/models` 返回统计</span>
-          </div>
-          <div class="signal-card">
-            <p class="signal-label">RAG 状态</p>
-            <strong id="rag-status">检测中</strong>
-            <span class="signal-note">默认 `local-hash` 离线检索</span>
-          </div>
-          <div class="signal-card signal-card-accent">
-            <p class="signal-label">执行接口</p>
-            <strong>POST /run</strong>
-            <span class="signal-note">单页调用，无需额外前端工程</span>
-          </div>
-        </aside>
-      </header>
-
-      <section class="overview-strip">
-        <article class="mini-panel">
-          <p class="section-label">输入规则</p>
-          <p>显式写 `蛋白质序列:` 或 `protein sequence:` 时最稳定。</p>
-        </article>
-        <article class="mini-panel">
-          <p class="section-label">默认行为</p>
-          <p>默认走 `local-stub` + `local-hash`，方便离线演示。</p>
-        </article>
-        <article class="mini-panel">
-          <p class="section-label">推荐用途</p>
-          <p>用于作品集展示、API 联调、真实模型接入前的工作流验证。</p>
-        </article>
+        <div class="hero-actions">
+          <button type="button" class="ghost-pill" data-example="peptide">多肽设计</button>
+          <button type="button" class="ghost-pill" data-example="aptamer">适配体设计</button>
+          <button type="button" class="ghost-pill" data-example="protein">蛋白评分</button>
+        </div>
       </section>
 
-      <section class="workspace">
-        <form id="run-form" class="control-panel">
-          <div class="panel-header">
+      <section class="workspace-grid">
+        <section class="chat-board">
+          <div class="board-head">
             <div>
-              <p class="eyebrow">Input Console</p>
-              <h2>运行请求</h2>
+              <p class="eyebrow">Session</p>
+              <h2>当前任务会话</h2>
             </div>
-            <button type="submit" class="primary-button">执行 Agent</button>
+            <p id="request-status" class="board-note">等待任务提交</p>
           </div>
 
-          <label class="field field-query">
-            <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px;">
-              <span>对话/指令 (大模型会自动决策路由)</span>
-              <div class="example-hints">
-                <span class="hint-label">💡 点此快捷输入测试语：</span>
-                <button type="button" class="example-link" data-example="peptide">多肽片段</button>
-                <button type="button" class="example-link" data-example="aptamer">核酸适配体</button>
-                <button type="button" class="example-link" data-example="protein">蛋白质跑分</button>
-              </div>
-            </div>
-            <textarea
-              id="query"
-              name="query"
-              rows="8"
-              placeholder="例如：请根据蛋白质序列 MKTAYIAKQRQISFVKSHFSRQDILDLWIYHTQGYFP 生成一个配对多肽"
-              required
-            ></textarea>
-          </label>
-
-          <label class="field">
-            <span>单独传入蛋白质序列</span>
-            <textarea
-              id="protein-sequence"
-              name="protein_sequence"
-              rows="4"
-              placeholder="如果 query 没带序列，可以单独填这里。"
-            ></textarea>
-          </label>
-
-          <div class="control-row">
-            <label class="toggle">
-              <input id="include-metrics" type="checkbox" checked />
-              <span>返回评价指标</span>
-            </label>
-            <button type="button" class="ghost-button" id="check-health">刷新状态</button>
-          </div>
-
-          <div class="hint-card">
-            <p class="section-label">输入建议</p>
-            <ul class="hint-list">
-              <li>中文输入建议显式写出“蛋白质序列: ...”。</li>
-              <li>英文 query 最好同时单独填入 `protein_sequence`。</li>
-              <li>如果当前只是演示流程，直接使用示例按钮即可。</li>
-            </ul>
-          </div>
-        </form>
-
-        <section class="result-panel">
-          <div class="panel-header">
-            <div>
-              <p class="eyebrow">Execution Result</p>
-              <h2>结果总览</h2>
-            </div>
-            <span id="request-badge" class="request-badge">等待请求</span>
-          </div>
-
-          <div class="result-grid">
-            <article class="result-card">
-              <p class="card-label">任务类型</p>
-              <strong id="task-type">未执行</strong>
-            </article>
-            <article class="result-card">
-              <p class="card-label">命中关键词</p>
-              <strong id="matched-keywords">-</strong>
-            </article>
-            <article class="result-card">
-              <p class="card-label">模型</p>
-              <strong id="selected-model">-</strong>
-            </article>
-            <article class="result-card">
-              <p class="card-label">候选序列</p>
-              <strong id="generated-sequence">-</strong>
-            </article>
-            <article class="result-card">
-              <p class="card-label">RAG 命中数</p>
-              <strong id="rag-hit-count">0</strong>
-            </article>
-            <article class="result-card">
-              <p class="card-label">指标数量</p>
-              <strong id="metric-count">0</strong>
-            </article>
-          </div>
-
-          <section class="metric-section">
-            <div class="metric-header">
-              <div>
-                <p class="section-label">评价指标</p>
-                <p class="metric-caption">将结构化指标拆成卡片，方便快速浏览。</p>
-              </div>
-              <span id="metric-summary" class="metric-summary">等待执行</span>
-            </div>
-            <div id="metrics-grid" class="metric-grid">
-              <article class="metric-empty">等待执行</article>
-            </div>
+          <section id="thread" class="thread" aria-live="polite">
+            <section id="thread-empty" class="thread-empty">
+              <p class="eyebrow">Ready</p>
+              <h3>提交请求后，系统会按步骤展开执行轨迹，并在完成后提供结果入口。</h3>
+              <p>
+                建议在请求中明确写出任务目标，例如“多肽”“适配体”“蛋白质预测”，并尽量提供蛋白质序列，以便系统完成更稳定的路由与处理。
+              </p>
+            </section>
           </section>
-
-          <div class="output-stack">
-            <article class="output-card">
-              <p class="section-label">路由原因</p>
-              <pre id="route-reason">等待执行</pre>
-            </article>
-            <article class="output-card">
-              <p class="section-label">文本输出</p>
-              <pre id="output-text">等待执行</pre>
-            </article>
-            <article class="output-card">
-              <p class="section-label">RAG 检索上下文</p>
-              <pre id="rag-context">等待执行</pre>
-            </article>
-            <article class="output-card output-card-status">
-              <p class="section-label">请求状态</p>
-              <pre id="request-status">尚未请求</pre>
-            </article>
-          </div>
         </section>
+
+        <aside class="composer-panel">
+          <div class="board-head board-head-tight">
+            <div>
+              <p class="eyebrow">Submission</p>
+              <h2>任务提交</h2>
+            </div>
+          </div>
+
+          <form id="run-form" class="composer-form">
+            <label class="field">
+              <span>任务请求</span>
+              <textarea
+                id="query"
+                name="query"
+                rows="8"
+                placeholder="例如：请评估该蛋白质的结合潜力，并返回结构化评分结果"
+                required
+              ></textarea>
+            </label>
+
+            <details class="input-drawer">
+              <summary>附加蛋白质序列</summary>
+              <label class="field field-tight">
+                <span>protein_sequence</span>
+                <textarea
+                  id="protein-sequence"
+                  name="protein_sequence"
+                  rows="5"
+                  placeholder="如果任务请求中未直接包含序列，可在此单独补充。"
+                ></textarea>
+              </label>
+            </details>
+
+            <div class="composer-footer">
+              <label class="toggle">
+                <input id="include-metrics" type="checkbox" checked />
+                <span>详情页包含评价指标</span>
+              </label>
+              <button type="submit" class="primary-button">提交任务</button>
+            </div>
+          </form>
+
+          <div class="micro-panel">
+            <p class="eyebrow">System Snapshot</p>
+            <dl class="micro-list">
+              <div class="micro-row">
+                <dt>服务</dt>
+                <dd id="service-status">检测中</dd>
+              </div>
+              <div class="micro-row">
+                <dt>模型</dt>
+                <dd id="model-count">0 / 0</dd>
+              </div>
+              <div class="micro-row">
+                <dt>RAG</dt>
+                <dd id="rag-status">等待检测</dd>
+              </div>
+            </dl>
+            <button id="check-health" type="button" class="text-button">同步系统状态</button>
+          </div>
+        </aside>
       </section>
     </main>
 
-    <section class="page-shell" style="margin-top: 2rem;">
-      <div class="panel-header">
-        <div>
-          <p class="eyebrow">Execution Records</p>
-          <h2>历史运行记录</h2>
-        </div>
-        <button type="button" class="ghost-button" id="refresh-history">刷新历史</button>
-      </div>
-      <div id="history-list" class="history-grid">
-        <p class="metric-empty" style="padding: 2rem; color: #64748b;">暂无查询记录</p>
-      </div>
-    </section>
-
+    <script src="/static/shared.js"></script>
     <script src="/static/app.js"></script>
   </body>
 </html>
