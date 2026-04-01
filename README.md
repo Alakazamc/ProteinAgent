@@ -12,6 +12,7 @@
 - 已完成蛋白任务的专用路由与核心业务骨架
 - 已升级为异步任务执行模式
 - 已补上 `Chat / Archive / System / Task Detail` 多页面前端结构、历史记录和持久化
+- 已接入 `Router LLM`，用于自然语言任务识别，并保留关键词 fallback
 - 已支持 `local-stub`、`generic-json`、`openai-compatible` 三种模型接入方式
 - 已支持可展示的 `trace_events` 执行轨迹，并在聊天主页面中按步骤逐步展开
 - 已具备作品集展示价值，但还没有把真实模型接入和更完整的集成测试完全收尾
@@ -26,22 +27,27 @@
 
 ### 2.2 当前能力
 
-- 根据 query 里的关键词选择任务类型和模型槽位
+- 优先由 `Router LLM` 对自然语言 query 做任务识别，失败时 fallback 到关键词路由
 - 从 query 或 `protein_sequence` 字段提取蛋白质序列
 - 对序列做规范化和合法性校验
 - 在模型调用前检索蛋白质领域知识作为 RAG 上下文
 - 异步下发任务，立即返回 `task_id`
 - 通过 `/tasks/{task_id}` 轮询查看任务状态
 - 在任务执行过程中写入 `trace_events`，用于前端展示“思考轨迹 / 执行轨迹”
+- 保存 `route_source` 与 `router_output_text`，用于区分路由来源并展示 Router LLM 原始输出
 - 将历史任务写入 SQLite，并通过 `/history` 返回
 - 前端页面支持：
   - `Chat` 页面提交任务并逐步展示执行轨迹
   - `Archive` 页面单独查看历史任务档案
   - `System` 页面查看服务状态、模型配置和知识库准备情况
-  - `Task Detail` 页面查看完整结果、指标、RAG 上下文和原始输出
+  - `Task Detail` 页面查看完整结果、指标、RAG 上下文、原始输出和 Router LLM 输出
 
 ### 2.3 当前模型接入方式
 
+- `Router LLM`
+  - 当前用于自然语言任务识别
+  - 已支持 `openai-compatible` 风格接口
+  - 当前本地配置接入的是豆包 `doubao-seed-2-0-pro-260215`
 - `local-stub`
   - 离线可跑
   - 适合本地调试、接口联调和作品集演示
@@ -271,7 +277,7 @@
 -> FastAPI 把任务派发给 Celery
 -> Worker 读取任务，先把状态改为 RUNNING，并持续追加 trace_events
 -> Worker 调用 ProteinAgent.prepare_execution(...)
-   - 关键词路由
+   - Router LLM 自然语言任务识别（失败时回退到关键词路由）
    - 蛋白质序列解析
    - RAG 检索
    - 选择模型
@@ -390,10 +396,12 @@ protein-agent/
 
 ### [app/router.py](/Users/alakazan/Documents/Playground/求职/protein-agent/app/router.py)
 
-负责关键词路由。
+负责任务路由。
 
 当前规则：
 
+- 优先使用 `Router LLM` 做自然语言分类
+- 当 Router LLM 不可用或解析失败时，回退到关键词路由
 - 命中 `适配体 / 核酸 / 核算 / aptamer / dna / rna` -> `aptamer_generation`
 - 命中 `多肽 / peptide` -> `peptide_generation`
 - 命中 `蛋白质 / 蛋白 / protein / 预测 / 打分 / 分类` -> `protein_prediction`
@@ -459,6 +467,12 @@ protein-agent/
 - `SUCCESS`
 - `FAILED`
 
+当前还会记录这些与路由相关的字段：
+
+- `route_reason`
+- `route_source`
+- `router_output_text`
+
 ### [app/static/index.html](/Users/alakazan/Documents/Playground/求职/protein-agent/app/static/index.html)
 
 负责 `Chat` 页面结构。
@@ -498,6 +512,11 @@ protein-agent/
 
 负责详情页数据读取、轮询和结构化渲染。
 
+当前也会单独展示：
+
+- Router LLM 的原始路由输出
+- 路由来源（Router LLM 或关键词 fallback）
+
 ### [app/static/shared.js](/Users/alakazan/Documents/Playground/求职/protein-agent/app/static/shared.js)
 
 负责多页面共享的前端格式化和导航逻辑。
@@ -516,6 +535,17 @@ protein-agent/
 
 ### 6.1 模型配置
 
+- `ROUTER_LLM_PROVIDER`
+- `ROUTER_LLM_MODEL_NAME`
+- `ROUTER_LLM_BASE_URL`
+- `ROUTER_LLM_API_KEY`
+- `ROUTER_LLM_TIMEOUT_SECONDS`
+- `ROUTER_LLM_FALLBACK_TO_KEYWORDS`
+- `LLM_PROVIDER`
+- `MODEL_NAME`
+- `MODEL_BASE_URL`
+- `MODEL_API_KEY`
+- `MODEL_TIMEOUT_SECONDS`
 - `PROTEIN_MODEL_PROVIDER`
 - `PROTEIN_MODEL_NAME`
 - `PROTEIN_MODEL_BASE_URL`
@@ -577,6 +607,9 @@ protein-agent/
 - `metrics`
 
 ### 7.3 `openai-compatible`
+
+- 可用于任务模型，也可用于 `Router LLM`
+- 当前项目已将其用于豆包路由模型接入
 
 当前行为：
 
@@ -700,18 +733,19 @@ docker-compose up --build
 
 ## 11. 当前限制
 
-- 路由仍然是显式关键词匹配，不是语义分类
+- 当前对话入口虽然已接入 `Router LLM`，但系统本质上仍然只支持 `多肽生成 / 核酸适配体生成 / 蛋白质预测` 这 3 类任务；纯寒暄或无关自由对话不会被正常执行
+- `Router LLM` 只负责任务识别，真正的任务模型当前仍是 `local-stub`，真实多肽/适配体/蛋白模型还没有正式接入
 - 当前没有 broker / worker 可用性检查，`/health` 只检查了数据库，没有检查 Redis 和 worker
 - `worker.py` 当前还没有在任务开始时把状态显式写成 `RUNNING`
 - 前端会轮询异步任务，但没有超时终止、没有任务取消，也没有导出能力
 - `openai-compatible` 当前主要依赖 `<sequence>` 标签提取，不支持更稳的结构化输出协议
 - `generic-json` 只支持一套统一协议，真实模型若字段不同，需要继续补适配
 - SQLite 适合本地演示和作品集，不适合更高强度并发
-- 当前测试没有覆盖 `/run -> /tasks -> /history` 的完整集成链路，也没有覆盖前端轮询逻辑
+- 当前测试还没有覆盖 `/run -> /tasks -> /history` 的完整集成链路，也没有覆盖前端轮询和多页面跳转逻辑
 
 ## 12. 下一步建议
 
 1. 先把异步链路补完整：`RUNNING` 状态写回、broker/worker 健康检查、任务超时/失败提示。
-2. 补集成测试：至少覆盖 `/run`、`/tasks/{task_id}`、`/history` 和 worker 落库流程。
-3. 再接真实多肽模型 API 和真实适配体模型 API。
+2. 补集成测试：至少覆盖 `/run`、`/tasks/{task_id}`、`/history`、worker 落库流程和前端轮询主链路。
+3. 再接真实多肽模型 API 和真实适配体模型 API，并补结构化输出协议。
 4. 最后补固定输入集、页面截图和录屏，用于简历和作品集展示。

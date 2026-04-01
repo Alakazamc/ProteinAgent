@@ -6,7 +6,7 @@ from .config import AppConfig, ModelConfig
 from .knowledge_base import ProteinKnowledgeBase, get_cached_knowledge_base
 from .metrics import compute_metrics
 from .model_clients import build_model_client
-from .router import RouteError, route_query
+from .router import RouteError, route_query_with_optional_llm
 from .schemas import (
     AgentExecutionResult,
     ModelExecutionRequest,
@@ -49,7 +49,7 @@ class ProteinAgent:
             self._kb = None
 
     def route(self, query: str):
-        return route_query(query)
+        return route_query_with_optional_llm(query, self._config.router_llm)
 
     def run(
         self,
@@ -136,6 +136,8 @@ class ProteinAgent:
             task_type=prepared.route_decision.task_type,
             matched_keywords=prepared.route_decision.matched_keywords,
             route_reason=prepared.route_decision.reason,
+            route_source=prepared.route_decision.route_source,
+            router_output_text=prepared.route_decision.router_output_text,
             protein_sequence=prepared.protein_sequence,
             selected_model_name=prepared.model_config.model_name,
             selected_model_provider=prepared.model_config.provider,
@@ -170,6 +172,14 @@ class ProteinAgent:
                 "configured": model_config.is_configured,
             }
             for model_config in model_configs
+        ] + [
+            {
+                "task_type": "task_routing",
+                "provider": self._config.router_llm.provider or "disabled",
+                "model_name": self._config.router_llm.model_name or "--",
+                "base_url": self._config.router_llm.base_url,
+                "configured": self._config.router_llm.is_configured,
+            }
         ]
 
     def _resolve_protein_sequence(self, protein_sequence: str | None, query: str) -> str:
@@ -230,14 +240,11 @@ def _build_trace_events(
     generated_sequence: str | None,
     metrics: dict[str, object],
 ) -> list[dict[str, str]]:
-    keyword_summary = "、".join(prepared.route_decision.matched_keywords) or "无"
     trace_events = [
         TraceEvent(
             step="route",
             title="识别任务类型",
-            detail=(
-                f"{prepared.route_decision.task_type.value}，命中关键词：{keyword_summary}"
-            ),
+            detail=prepared.route_decision.reason,
         ).to_dict(),
         TraceEvent(
             step="sequence",
@@ -258,6 +265,15 @@ def _build_trace_events(
             ),
         ).to_dict(),
     ]
+
+    if prepared.route_decision.router_output_text:
+        trace_events.append(
+            TraceEvent(
+                step="router-llm-output",
+                title="路由模型输出",
+                detail=prepared.route_decision.router_output_text,
+            ).to_dict()
+        )
 
     if generated_sequence:
         trace_events.append(

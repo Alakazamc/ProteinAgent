@@ -16,6 +16,8 @@ class RouteDecision:
     task_type: TaskType
     matched_keywords: tuple[str, ...]
     reason: str
+    route_source: str = "keyword"
+    router_output_text: str | None = None
 
 
 @dataclass(frozen=True)
@@ -54,6 +56,8 @@ class AgentExecutionResult:
     task_type: TaskType
     matched_keywords: tuple[str, ...]
     route_reason: str
+    route_source: str
+    router_output_text: str | None
     protein_sequence: str
     selected_model_name: str
     selected_model_provider: str
@@ -63,4 +67,3 @@ class AgentExecutionResult:
     metrics: dict[str, Any]
     rag_context: list[dict[str, Any]] = field(default_factory=list)
     trace_events: list[dict[str, str]] = field(default_factory=list)
-

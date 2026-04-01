@@ -145,7 +145,8 @@ function toThinkingText(event) {
   const detail = event.detail || "";
   if (step === "queued") return "任务已进入队列，等待后台执行资源接管。";
   if (step === "running") return "后台 worker 已接手任务，开始解析请求内容。";
-  if (step === "route") return `系统已完成任务识别与路由判断：${detail}`;
+  if (step === "route") return detail || "系统已完成任务识别与路由判断。";
+  if (step === "router-llm-output") return `路由模型返回了结构化分类结果：${detail}`;
   if (step === "sequence") return `系统已完成输入序列校验与规范化：${detail}`;
   if (step === "rag") return `系统已完成知识库检索：${detail}`;
   if (step === "model") return `系统已选择执行模型：${detail}`;

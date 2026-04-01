@@ -20,6 +20,9 @@ window.ProteinUI = (() => {
   }
 
   function formatTaskLabel(taskType) {
+    if (taskType === "task_routing") {
+      return "任务路由";
+    }
     if (taskType === "peptide_generation") {
       return "多肽生成";
     }

@@ -21,6 +21,7 @@ const detailElements = {
   metrics: document.getElementById("detail-metrics"),
   query: document.getElementById("detail-query"),
   output: document.getElementById("detail-output"),
+  routerOutput: document.getElementById("detail-router-output"),
   rag: document.getElementById("detail-rag"),
   trace: document.getElementById("detail-trace"),
 };
@@ -136,9 +137,11 @@ function renderTask(task) {
   detailElements.sequence.textContent = task.generated_sequence || "暂无候选序列";
   detailElements.query.textContent = task.request_query || "--";
   detailElements.output.textContent = task.output_text || task.error_message || "--";
+  detailElements.routerOutput.textContent = task.router_output_text || "当前任务未返回路由模型输出";
 
   if (isLegacyStaleRecord(task)) {
     detailElements.sequence.textContent = "该记录为历史遗留任务，未生成完整候选结果。";
+    detailElements.routerOutput.textContent = "历史遗留任务未保留路由模型输出。";
   }
 
   renderMetrics(task.metrics);

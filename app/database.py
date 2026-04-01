@@ -55,6 +55,14 @@ def _apply_schema_patches(sync_conn) -> None:
         patch_statements.append(
             "ALTER TABLE agent_executions ADD COLUMN trace_events JSON"
         )
+    if "route_source" not in existing_columns:
+        patch_statements.append(
+            "ALTER TABLE agent_executions ADD COLUMN route_source VARCHAR(50)"
+        )
+    if "router_output_text" not in existing_columns:
+        patch_statements.append(
+            "ALTER TABLE agent_executions ADD COLUMN router_output_text VARCHAR"
+        )
 
     for statement in patch_statements:
         sync_conn.exec_driver_sql(statement)

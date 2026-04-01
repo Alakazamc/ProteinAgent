@@ -89,6 +89,8 @@ async def _run_and_save_async(task_id: str, query: str, protein_sequence: str | 
             record.model_name = result.selected_model_name
             record.generated_sequence = result.generated_sequence
             record.route_reason = result.route_reason
+            record.route_source = result.route_source
+            record.router_output_text = result.router_output_text
             record.output_text = result.output_text
             record.metrics = result.metrics
             record.rag_context = result.rag_context
@@ -140,24 +142,32 @@ def _append_trace_event(record: AgentExecutionRecord, event: TraceEvent) -> None
 
 
 def _apply_prepared_state(record: AgentExecutionRecord, prepared: PreparedAgentRun) -> None:
-    keyword_summary = "、".join(prepared.route_decision.matched_keywords) or "无"
     record.task_type = prepared.route_decision.task_type.value
     record.matched_keywords = list(prepared.route_decision.matched_keywords)
     record.input_sequence = prepared.protein_sequence
     record.model_provider = prepared.model_config.provider
     record.model_name = prepared.model_config.model_name
     record.route_reason = prepared.route_decision.reason
+    record.route_source = prepared.route_decision.route_source
+    record.router_output_text = prepared.route_decision.router_output_text
 
     _append_trace_event(
         record,
         TraceEvent(
             step="route",
             title="识别任务类型",
-            detail=(
-                f"{prepared.route_decision.task_type.value}，命中关键词：{keyword_summary}"
-            ),
+            detail=prepared.route_decision.reason,
         ),
     )
+    if prepared.route_decision.router_output_text:
+        _append_trace_event(
+            record,
+            TraceEvent(
+                step="router-llm-output",
+                title="路由模型输出",
+                detail=prepared.route_decision.router_output_text,
+            ),
+        )
     _append_trace_event(
         record,
         TraceEvent(

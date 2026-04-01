@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 
@@ -25,10 +25,25 @@ class ModelConfig:
 
 
 @dataclass(frozen=True)
+class RouterLLMConfig:
+    provider: str | None = None
+    model_name: str | None = None
+    base_url: str | None = None
+    api_key: str | None = None
+    timeout_seconds: int = 30
+    fallback_to_keywords: bool = True
+
+    @property
+    def is_configured(self) -> bool:
+        return bool(self.provider and self.model_name and self.base_url)
+
+
+@dataclass(frozen=True)
 class AppConfig:
     protein_model: ModelConfig
     peptide_model: ModelConfig
     aptamer_model: ModelConfig
+    router_llm: RouterLLMConfig = field(default_factory=RouterLLMConfig)
     min_protein_sequence_length: int = 8
     rag_enabled: bool = True
     rag_top_k: int = 3
@@ -72,6 +87,7 @@ def load_config() -> AppConfig:
             task_type="aptamer_generation",
             default_name="nucleic-aptamer-generator",
         ),
+        router_llm=_load_router_llm_config(),
         min_protein_sequence_length=_read_int("MIN_PROTEIN_SEQUENCE_LENGTH", 8),
         rag_enabled=os.getenv("RAG_ENABLED", "true").strip().lower() in ("true", "1", "yes"),
         rag_top_k=_read_int("RAG_TOP_K", 3),
@@ -95,6 +111,41 @@ def _load_model_config(prefix: str, task_type: str, default_name: str) -> ModelC
         base_url=_read_optional_env(f"{prefix}_BASE_URL"),
         api_key=_read_optional_env(f"{prefix}_API_KEY"),
         timeout_seconds=_read_int(f"{prefix}_TIMEOUT_SECONDS", 30),
+    )
+
+
+def _load_router_llm_config() -> RouterLLMConfig:
+    provider = (
+        _read_optional_env("ROUTER_LLM_PROVIDER")
+        or _read_optional_env("LLM_PROVIDER")
+    )
+    model_name = (
+        _read_optional_env("ROUTER_LLM_MODEL_NAME")
+        or _read_optional_env("MODEL_NAME")
+    )
+    base_url = (
+        _read_optional_env("ROUTER_LLM_BASE_URL")
+        or _read_optional_env("MODEL_BASE_URL")
+    )
+    api_key = (
+        _read_optional_env("ROUTER_LLM_API_KEY")
+        or _read_optional_env("MODEL_API_KEY")
+    )
+    timeout_seconds = _read_int(
+        "ROUTER_LLM_TIMEOUT_SECONDS",
+        _read_int("MODEL_TIMEOUT_SECONDS", 30),
+    )
+    fallback_to_keywords = (
+        os.getenv("ROUTER_LLM_FALLBACK_TO_KEYWORDS", "true").strip().lower()
+        in ("true", "1", "yes")
+    )
+    return RouterLLMConfig(
+        provider=provider.lower() if provider else None,
+        model_name=model_name,
+        base_url=base_url,
+        api_key=api_key,
+        timeout_seconds=timeout_seconds,
+        fallback_to_keywords=fallback_to_keywords,
     )
 
 

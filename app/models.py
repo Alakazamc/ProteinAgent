@@ -40,6 +40,8 @@ class AgentExecutionRecord(Base):
     model_name = Column(String(100), nullable=True)
     generated_sequence = Column(String, nullable=True)
     route_reason = Column(String, nullable=True)
+    route_source = Column(String(50), nullable=True)
+    router_output_text = Column(String, nullable=True)
     output_text = Column(String, nullable=True)
     
     # JSON Fields (For nested metadata)
@@ -65,6 +67,8 @@ class AgentExecutionRecord(Base):
             "model_name": self.model_name,
             "generated_sequence": self.generated_sequence,
             "route_reason": self.route_reason,
+            "route_source": self.route_source,
+            "router_output_text": self.router_output_text,
             "output_text": self.output_text,
             "metrics": self.metrics,
             "rag_context": self.rag_context,
