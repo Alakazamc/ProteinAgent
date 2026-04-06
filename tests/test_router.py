@@ -15,6 +15,11 @@ class RouterTests(unittest.TestCase):
         self.assertEqual(decision.task_type, TaskType.PEPTIDE_GENERATION)
         self.assertIn("多肽", decision.matched_keywords)
 
+    def test_route_peptide_generation_with_generic_peptide_wording(self) -> None:
+        decision = route_query("我想要一个肽类候选，蛋白质序列是 MKTAYIAKQRQISFVKSHFS")
+        self.assertEqual(decision.task_type, TaskType.PEPTIDE_GENERATION)
+        self.assertIn("肽类", decision.matched_keywords)
+
     def test_route_aptamer_generation(self) -> None:
         decision = route_query("请根据蛋白质序列 MKTAYIAKQRQISFVKSHFS 设计核酸适配体")
         self.assertEqual(decision.task_type, TaskType.APTAMER_GENERATION)

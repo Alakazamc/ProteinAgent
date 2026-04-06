@@ -6,3 +6,4 @@ redis
 sqlalchemy>=2.0
 aiosqlite
 greenlet
+httpx

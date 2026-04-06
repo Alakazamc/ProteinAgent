@@ -11,7 +11,7 @@ from .schemas import RouteDecision, TaskType
 
 logger = logging.getLogger(__name__)
 
-PEPTIDE_KEYWORDS = ("多肽", "peptide")
+PEPTIDE_KEYWORDS = ("多肽", "肽类", "肽", "peptide")
 APTAMER_KEYWORDS = ("适配体", "核酸", "核算", "aptamer", "dna", "rna")
 PROTEIN_KEYWORDS = ("蛋白质", "蛋白", "protein", "预测", "打分", "分类")
 

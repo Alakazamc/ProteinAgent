@@ -84,6 +84,28 @@ def _build_agent_with_options(include_knowledge_base: bool) -> ProteinAgent:
     return ProteinAgent(config=config, knowledge_base=knowledge_base)
 
 
+def _append_trace_event_dict(
+    record: AgentExecutionRecord,
+    event: TraceEvent,
+) -> None:
+    current_events = list(record.trace_events or [])
+    current_events.append(event.to_dict())
+    record.trace_events = current_events
+
+
+def _summarize_model_health(agent: ProteinAgent) -> dict[str, object]:
+    items = agent.list_models()
+    router_item = next((item for item in items if item["task_type"] == "task_routing"), None)
+    task_models = [item for item in items if item["task_type"] != "task_routing"]
+    configured_task_models = [item for item in task_models if item["configured"]]
+    return {
+        "router": router_item,
+        "task_models": task_models,
+        "configured_task_model_count": len(configured_task_models),
+        "total_task_model_count": len(task_models),
+    }
+
+
 @app.get("/", include_in_schema=False)
 def index() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
@@ -112,6 +134,7 @@ def task_view(task_id: str) -> FileResponse:
 @app.get("/health")
 async def health(db: AsyncSession = Depends(get_db)) -> dict[str, object]:
     agent = _build_agent_with_options(include_knowledge_base=True)
+    config = load_config()
     kb = agent.knowledge_base
     
     # Simple db health check
@@ -126,7 +149,11 @@ async def health(db: AsyncSession = Depends(get_db)) -> dict[str, object]:
         "status": "ok",
         "service": "protein-agent",
         "database": "ok" if db_ok else "error",
-        "models": agent.list_models(),
+        "queue": {
+            "broker_url": config.celery_broker_url,
+            "configured": bool(config.celery_broker_url),
+        },
+        "models": _summarize_model_health(agent),
         "rag": {
             "enabled": kb is not None and kb.ready,
             "entries": kb.entry_count if kb else 0,
@@ -194,12 +221,36 @@ async def run(payload: RunRequest, db: AsyncSession = Depends(get_db)) -> TaskCr
     db.add(record)
     await db.commit()
 
-    run_agent_task.delay(
-        task_id,
-        payload.query,
-        payload.protein_sequence,
-        payload.include_metrics
-    )
+    try:
+        run_agent_task.delay(
+            task_id,
+            payload.query,
+            payload.protein_sequence,
+            payload.include_metrics,
+        )
+    except Exception as exc:
+        logger.exception("Failed to enqueue task %s: %s", task_id, exc)
+        record.status = JobStatus.FAILED
+        record.error_message = f"任务入队失败: {exc}"
+        record.completed_at = sa.func.now()
+        _append_trace_event_dict(
+            record,
+            TraceEvent(
+                step="enqueue-failed",
+                title="任务入队失败",
+                detail=str(exc),
+                status="failed",
+            ),
+        )
+        await db.commit()
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "message": "任务已创建但未成功进入执行队列。",
+                "task_id": task_id,
+                "status": JobStatus.FAILED,
+            },
+        ) from exc
 
     return TaskCreatedResponse(
         task_id=task_id,
