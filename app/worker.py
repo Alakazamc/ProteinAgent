@@ -33,7 +33,7 @@ celery_app.conf.update(
     enable_utc=True,
 )
 
-# Global lazy-initialized agent to avoid reloading RAG FAISS index for every task
+# Global lazy-initialized agent to avoid reloading the RAG knowledge base for every task
 _agent_instance = None
 
 
