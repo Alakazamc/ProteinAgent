@@ -1,6 +1,6 @@
 # ProteinAgent
 
-`ProteinAgent` 不是一个“蛋白质小工具”，而是我为 `AI 应用工程 / Agent` 岗位准备的旗舰作品。  
+`ProteinAgent` 不是一个“蛋白质小工具”，而是一个垂直领域的异步 AI Agent 编排系统。  
 它把一个垂直领域任务拆成完整的真实系统链路：
 
 - 自然语言任务路由
@@ -28,7 +28,7 @@
 - `route_source`、`router_output_text`、`rag_context`、`metrics` 都会落库
 - `Archive / Task Detail` 页面可以回看历史任务，而不是一次性回答完就结束
 
-这正好对应很多 `AI应用工程 / Agent` 岗位关注的点：  
+这正好对应一个生产级 AI 工作流系统的核心关注点：  
 `Python`、`FastAPI`、`RAG`、`Function Calling / Agent Workflow`、`数据库/缓存`、`模型接入`、`工程化状态管理`。
 
 ## 当前能力
@@ -138,7 +138,7 @@ RAG 返回的知识块不仅出现在结果文本里，也会进入：
 当前测试命令：
 
 ```bash
-./.venv/bin/python -m unittest discover -s tests -v
+python -m unittest discover -s tests -v
 ```
 
 当前通过：
@@ -162,12 +162,12 @@ RAG 返回的知识块不仅出现在结果文本里，也会进入：
 评测脚本：
 
 ```bash
-./.venv/bin/python scripts/run_eval.py --write-report evals/latest_report.md
+python scripts/run_eval.py --write-report evals/latest_report.md
 ```
 
 评测报告：
 
-- [evals/latest_report.md](/Users/alakazan/Documents/Playground/求职/proteinAgent/evals/latest_report.md)
+- [evals/latest_report.md](evals/latest_report.md)
 
 当前离线评测结果：
 
@@ -188,11 +188,11 @@ RAG 返回的知识块不仅出现在结果文本里，也会进入：
 
 固定 demo 输入：
 
-- [demo/demo_cases.md](/Users/alakazan/Documents/Playground/求职/proteinAgent/demo/demo_cases.md)
+- [demo/demo_cases.md](demo/demo_cases.md)
 
 录屏脚本：
 
-- [demo/recording_script.md](/Users/alakazan/Documents/Playground/求职/proteinAgent/demo/recording_script.md)
+- [demo/recording_script.md](demo/recording_script.md)
 
 推荐演示顺序：
 
@@ -231,7 +231,7 @@ proteinAgent/
 ### 1. 安装依赖
 
 ```bash
-./.venv/bin/python -m pip install -r requirements.txt
+python -m pip install -r requirements.txt
 ```
 
 ### 2. 启动依赖
@@ -243,29 +243,16 @@ docker-compose up -d redis
 ### 3. 启动 Web
 
 ```bash
-./.venv/bin/python -m uvicorn app.main:app --reload
+python -m uvicorn app.main:app --reload
 ```
 
 ### 4. 启动 Worker
 
 ```bash
-./.venv/bin/python -m celery -A app.worker.celery_app worker --loglevel=info
+python -m celery -A app.worker.celery_app worker --loglevel=info
 ```
 
 如果只做离线演示，可以使用 `local-stub` 任务模型，避免依赖真实模型服务。
-
-## 简历写法建议
-
-推荐项目名：
-
-- `ProteinAgent：垂直领域异步 AI Agent 编排系统`
-
-推荐 bullet 结构：
-
-1. 将同步原型升级为 `FastAPI + Celery + Redis + SQLite` 的异步任务系统，支持 `task_id` 轮询、历史记录落库与失败态追踪。
-2. 设计 `Router LLM + 关键词 fallback + 蛋白领域 RAG` 的 Agent 工作流，覆盖多肽生成、适配体生成和蛋白预测三类任务。
-3. 实现 `trace_events / route_source / router_output_text / rag_context` 的全链路可观测输出，并提供 `Chat / Archive / System / Task Detail` 多页面控制台。
-4. 补齐 `30` 个单元与 API 测试，以及 `30` 条离线评测集，验证路由、执行成功率和错误路径的稳定性。
 
 ## 当前边界
 
